@@ -118,6 +118,28 @@ bash scripts/setup-pi-home.sh      # 默认建在 ~/.skill-eval/pi-home
 npm run eval -- eval --suite ... --home ~/.skill-eval/pi-home
 ```
 
+### OptraCall 产品环境对照
+
+裸 Pi 受控会话测得的效果不含产品系统提示、业务上下文、工具与交付流程。要判断 skill 对 OptraCall 用户是否真有帮助，用产品环境后端让两侧都走 OptraCall 的正常任务入口：
+
+```bash
+npm run eval -- eval \
+  --suite suites/optracall-data-analysis-v1.json \
+  --optracall /path/to/OptraCall \
+  --optracall-node /path/to/node25+ \
+  --model minimax-cn/MiniMax-M3.1-Flash \
+  --judge-model xiaomi-token-plan-cn/mimo-v2.6-flash \
+  --home ~/.skill-eval/pi-home
+```
+
+- **唯一变量**：两份 codeRoot 除目标 skill 包外逐字节一致（全量哈希核验），独立 dataRoot/projectsRoot，每次 attempt 全新项目；其余内置 skill、模型配置、任务文本、模板两侧一致。
+- **正常入口**：Host HTTP 建项目/任务/上传资料/发消息（202）→ 轮询终态；不修改产品代码，不触碰用户运行中的试用服务。
+- **取证**：native 会话 JSONL 做激活取证，`060_reports` 交付物计分，`020_clean` 过程文件与三目录哈希留痕；聊天自述只作过程记录。
+- **复用**：冻结、配对、断言、盲评、结论、回归门禁不变；评委仍走受控 Pi 会话。`run-manifest.json` 增加 `optracall` 冻结段（不含 apiKey）。
+- **边界**：产品正常任务非 OS 沙箱，隔离靠独立评测根 + 基线物理移除 skill + 污染取证；v1 被评模型限 `minimax-cn/MiniMax-M3.1-Flash`。
+
+离线链路验证（无真实费用）：`scripts/optracall-host-integration.ts`（真实 Host API）、`scripts/optracall-model-integration.ts`（本地假 Provider 完整模型链路）。方法与边界见 [驱动契约](docs/plans/2026-11-15-optracall-driver-contract.md) 与 [离线验收记录](docs/optracall驱动离线验收-2026-11-15.md)。
+
 ### 常用命令
 
 ```bash

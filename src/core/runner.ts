@@ -48,6 +48,8 @@ export interface EvalTask {
   prompt: string;
   /** Optional frozen workspace Markdown path used for assertions and blind judging. */
   deliverablePath?: string;
+  /** OptraCall 产品环境套件：本题初始资料模板目录（相对套件文件），覆盖套件级默认。 */
+  templateDir?: string;
   /** 预期要点，同时用于评委提示词。 */
   expectedPoints?: string[];
   /** 评分标准，覆盖默认。 */
@@ -469,6 +471,7 @@ async function runCase(
   const run = await options.execution!.run("subject", {
     workspaceRoot,
     sessionId: `${options.runId}-${id}`,
+    taskId: task.id,
     prompt,
     model: options.model,
     skillPaths: variant.skillPaths,

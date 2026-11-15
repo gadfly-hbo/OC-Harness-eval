@@ -95,8 +95,12 @@ import {
 import { freezeSkill } from "../core/provenance.ts";
 import { assertFreshRunRoot, saveRunManifest, loadRunManifest, frozenSkillPath, relativeSnapshotDir, EVALUATION_POLICY_VERSION, type RunManifest } from "../core/run-manifest.ts";
 import { preflightModels } from "../core/model-preflight.ts";
-import { validateControlledPlan } from "../core/execution.ts";
+import { validateControlledPlan, type EvaluationExecution } from "../core/execution.ts";
 import { captureEvaluatorIdentity, type EvaluationRuntimeIdentity } from "../core/runtime-identity.ts";
+import { prepareOptraCallEnvironments } from "../core/optracall-env.ts";
+import { createOptraCallExecution } from "../core/optracall-execution.ts";
+import { resolveOptraCallNode } from "../core/optracall-driver.ts";
+import { OPTRACALL_SUBJECT_PROFILE, optracallConfiguration, readPiApiKey, loadOptraCallTemplate, optracallManifestSection, hashTemplate } from "../core/optracall-setup.ts";
 
 interface CliArgs {
   command: string;
@@ -426,14 +430,30 @@ async function runSingleModelEval(params: {
   gainThresholdPp: number | undefined;
   runtimeIdentity: EvaluationRuntimeIdentity;
   signal: AbortSignal;
+  /** 产品环境对照：提供 OptraCall checkout 与解释器，执行层在冻结后构建。 */
+  optracall?: { sourceRoot: string; nodePath: string | undefined; suiteDir: string };
 }): Promise<{ summary: EvaluationSummary; decision: VerdictDecision; reportPath: string }> {
   const { suite, skillPath, model, judgeModel, repeat, judgeRepeat, outDir, runId } = params;
   assertFreshRunRoot(outDir);
   const frozen = freezeSkill(skillPath, join(outDir, ".frozen", "skill"));
+  let optracallBuilt: { envs: ReturnType<typeof prepareOptraCallEnvironments>; execution: EvaluationExecution; manifestSection: NonNullable<RunManifest["optracall"]> } | undefined;
+  if (params.optracall) {
+    const skillName = suite.optracall!.skillName;
+    const envs = prepareOptraCallEnvironments({ sourceRoot: params.optracall.sourceRoot, skillName, envRoot: join(outDir, "optracall-env") });
+    const configuration = optracallConfiguration(readPiApiKey(params.piHome, OPTRACALL_SUBJECT_PROFILE.provider));
+    const execution = createOptraCallExecution({
+      mode: "real", runRoot: outDir, envs, model, judgeModel, nativeLimits: params.nativeLimits,
+      judgePlannedSessions: suite.tasks.length * repeat * judgeRepeat, home: params.piHome, configuration,
+      templateFor: taskId => loadOptraCallTemplate(params.optracall!.suiteDir, suite, taskId),
+      nodePath: params.optracall.nodePath, signal: params.signal, timeoutMs: params.timeoutMs,
+    });
+    const templateHashes = Object.fromEntries(suite.tasks.map(task => [task.id, hashTemplate(loadOptraCallTemplate(params.optracall!.suiteDir, suite, task.id))]));
+    optracallBuilt = { envs, execution, manifestSection: { ...optracallManifestSection(envs, configuration, params.optracall.nodePath), templateHashes } };
+  }
   const effectiveSuiteHash = hashSuite({ ...suite, contextPrefix: params.contextPrefix });
   const variants: Variant[] = [
     { id: "baseline", label: "Baseline（不装 skill）", skillPaths: [] },
-    { id: "skill", label: `Skill（${suite.skill?.version ?? "当前版本"}）`, skillPaths: [frozen.skillPath] },
+    { id: "skill", label: `Skill（${suite.skill?.version ?? "当前版本"}）`, skillPaths: optracallBuilt ? [optracallBuilt.envs.skill.skillPath!] : [frozen.skillPath] },
   ];
   const manifest: RunManifest = {
     schemaVersion: 1, policyVersion: EVALUATION_POLICY_VERSION, runId, model, judgeModel, repeat, judgeRepeat, judgeSeed: runId,
@@ -441,6 +461,7 @@ async function runSingleModelEval(params: {
     settings: { gainThresholdPp: params.gainThresholdPp ?? GAIN_THRESHOLD_PP, timeoutMs: params.timeoutMs, judgeTimeoutMs: params.judgeTimeoutMs, keywordSignal: params.keywordSignal, nodeVersion: process.version, nativeLimits: params.nativeLimits },
     candidate: { identity: frozen.identity, snapshotDir: relativeSnapshotDir(outDir, frozen.skillPath), originalSkillPath: skillPath },
     suiteMeta: { suiteId: suite.id, suiteVersion: suite.version ?? "未标注", suiteHash: effectiveSuiteHash, skillVersion: suite.skill?.version ?? "未标注", skillPath },
+    ...(optracallBuilt ? { optracall: optracallBuilt.manifestSection } : {}),
   };
   saveRunManifest(outDir, manifest);
 
@@ -472,6 +493,7 @@ async function runSingleModelEval(params: {
     keywordSignal: params.keywordSignal,
     timeoutMs: params.timeoutMs,
     judgeTimeoutMs: params.judgeTimeoutMs,
+    ...(optracallBuilt ? { execution: optracallBuilt.execution } : {}),
     // 污染检测：baseline 侧若自行读到了被测 skill 或含 skill 路径的元数据文件，
     // 对照实验的唯一变量就被破坏了。检测需要知道 skill 的位置。
     skillPathForContamination: skillPath,
@@ -542,7 +564,22 @@ async function commandEval(args: CliArgs): Promise<number> {
       ? expandTilde(suite.skill.path)
       : resolve(suiteDir, expandTilde(suite.skill.path))
     : undefined;
-  const skillPath = skillFlag ? resolve(expandTilde(skillFlag)) : skillFromSuite;
+  let skillPath = skillFlag ? resolve(expandTilde(skillFlag)) : skillFromSuite;
+
+  const optracallRoot = flagString(args.flags, "optracall");
+  let optracallNode: string | undefined;
+  if (suite.optracall) {
+    if (!optracallRoot) {
+      process.stderr.write("产品环境套件需要 --optracall <OptraCall checkout 路径>\n");
+      return 1;
+    }
+    skillPath = resolve(optracallRoot, "extensions", "analysis-assets", suite.optracall.skillName, "SKILL.md");
+    try { optracallNode = resolveOptraCallNode(flagString(args.flags, "optracall-node")); }
+    catch (error) { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); return 1; }
+  } else if (optracallRoot) {
+    process.stderr.write("--optracall 仅适用于声明了 optracall 段的产品环境套件\n");
+    return 1;
+  }
 
   if (!skillPath) {
     process.stderr.write("缺少被测 skill 路径：用 --skill 指定，或在套件中设置 skill.path\n");
@@ -624,6 +661,7 @@ async function commandEval(args: CliArgs): Promise<number> {
     gainThresholdPp,
     runtimeIdentity,
     signal: interruption.signal,
+    ...(suite.optracall ? { optracall: { sourceRoot: resolve(optracallRoot!), nodePath: optracallNode, suiteDir } } : {}),
   }).finally(() => {
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", interrupt);

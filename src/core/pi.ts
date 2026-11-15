@@ -20,6 +20,8 @@ export interface PiRunOptions {
   workspaceRoot: string;
   /** 会话 ID，保证可追溯与可回放。 */
   sessionId: string;
+  /** 用例 ID（OptraCall 等按题准备初始材料的后端使用）。 */
+  taskId?: string;
   /** 用户提示词。 */
   prompt: string;
   /** 模型标识，形如 `provider/model`。 */

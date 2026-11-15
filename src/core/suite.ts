@@ -24,6 +24,11 @@ export interface SuiteFile {
   contextPrefix?: string;
   repeat?: number;
   judgeRepeat?: number;
+  /** 声明本套件面向 OptraCall 产品环境对照（需 eval --optracall <checkout>）。 */
+  optracall?: {
+    skillName: string;
+    templateDir?: string;
+  };
   tasks: EvalTask[];
 }
 
@@ -73,6 +78,7 @@ export function hashSuite(suite: SuiteFile): string {
   const payload = canonicalize({
     id: suite.id,
     contextPrefix: suite.contextPrefix ?? null,
+    optracall: suite.optracall ? { skillName: suite.optracall.skillName, templateDir: suite.optracall.templateDir ?? null } : null,
     tasks: suite.tasks.map((t) => ({
       id: t.id,
       prompt: t.prompt,
@@ -82,6 +88,7 @@ export function hashSuite(suite: SuiteFile): string {
       rubric: t.rubric ?? null,
       assertions: t.assertions ?? [],
       deliverablePath: t.deliverablePath,
+      templateDir: t.templateDir ?? null,
     })),
   });
   const digest = createHash("sha256")
@@ -111,6 +118,14 @@ export function loadSuite(suitePath: string): SuiteFile {
     if (!task.prompt || !task.prompt.trim()) throw new Error(`用例 ${task.id} 缺少 prompt`);
     if (task.deliverablePath !== undefined && !validDeliverablePath(task.deliverablePath)) {
       throw new Error(`用例 ${task.id} 的 deliverablePath 必须是工作区内的相对 Markdown 路径`);
+    }
+    if (task.templateDir !== undefined && (typeof task.templateDir !== "string" || !task.templateDir.trim())) {
+      throw new Error(`用例 ${task.id} 的 templateDir 无效`);
+    }
+  }
+  if (parsed.optracall !== undefined) {
+    if (!parsed.optracall.skillName || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(parsed.optracall.skillName)) {
+      throw new Error("optracall.skillName 必须是安全的 skill 目录名");
     }
   }
 

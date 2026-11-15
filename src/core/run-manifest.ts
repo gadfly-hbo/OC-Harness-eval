@@ -10,6 +10,18 @@ import { DELIVERABLE_SNAPSHOT, readVerifiedDeliverable, validDeliverablePath } f
 export const RUN_MANIFEST_FILE = "run-manifest.json";
 export const EVALUATION_POLICY_VERSION = "paired-task-v2.1";
 export interface VerificationState { verified: boolean; issues: string[] }
+export interface OptraCallRunManifest {
+  sourceRoot: string;
+  commit: string | null;
+  dirty: boolean | null;
+  skillName: string;
+  sdk: { version: string; entrySha256: string } | null;
+  envManifestHash: string;
+  excluded: string[];
+  nodePath: string | null;
+  configuration: { provider: string; model: string; baseUrl: string; api: string; thinkingLevel: string | null };
+  templateHashes?: Record<string, string>;
+}
 export interface RunManifest {
   schemaVersion: 1;
   policyVersion: string;
@@ -26,6 +38,8 @@ export interface RunManifest {
   variants: Variant[];
   candidate: { identity: SkillIdentity; snapshotDir: string; originalSkillPath: string };
   suiteMeta: { suiteId: string; suiteVersion: string; suiteHash: string; skillVersion: string; skillPath: string };
+  /** 仅 OptraCall 产品环境对照运行存在。 */
+  optracall?: OptraCallRunManifest;
 }
 
 export function assertFreshRunRoot(runRoot: string): void {

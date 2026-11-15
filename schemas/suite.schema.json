@@ -46,6 +46,23 @@
       "type": "string",
       "description": "每次运行附加的上下文前缀，两侧必须一致"
     },
+    "optracall": {
+      "type": "object",
+      "description": "声明本套件面向 OptraCall 产品环境对照；需 eval --optracall <checkout>",
+      "additionalProperties": false,
+      "required": ["skillName"],
+      "properties": {
+        "skillName": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+          "description": "OptraCall extensions/analysis-assets 下的目标 skill 目录名"
+        },
+        "templateDir": {
+          "type": "string",
+          "description": "套件级初始资料模板目录（相对套件文件），含 010_draw/020_clean 子目录"
+        }
+      }
+    },
     "repeat": {
       "type": "integer",
       "minimum": 1,
@@ -81,6 +98,11 @@
             "type": "string",
             "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.md(?![\\s\\S])",
             "description": "冻结的工作区相对 Markdown 路径。设置时，规则和评委均使用该文件的采集快照。"
+          },
+          "templateDir": {
+            "type": "string",
+            "minLength": 1,
+            "description": "OptraCall 产品环境：本题初始资料模板目录（相对套件文件），覆盖套件级默认"
           },
           "expectedPoints": {
             "type": "array",

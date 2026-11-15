@@ -1,0 +1,48 @@
+{
+  "id": "optracall-smoke",
+  "name": "OptraCall 产品环境 · 最小冒烟（单题）",
+  "description": "真实最小冒烟：1 题 × 2 侧 × 1 次 + 1 轮盲评，核实 OptraCall 真实执行链路、激活取证、交付与用量。单题仅作链路诊断，不构成有效性结论。需 eval --optracall <checkout>。",
+  "version": "0.1.0",
+  "skill": {
+    "version": "optracall-builtin",
+    "note": "候选身份由 --optracall checkout 的 extensions/analysis-assets/data-analysis 整包冻结"
+  },
+  "optracall": {
+    "skillName": "data-analysis",
+    "templateDir": "templates/optracall-data-analysis"
+  },
+  "repeat": 1,
+  "judgeRepeat": 1,
+  "tasks": [
+    {
+      "id": "attr-sales",
+      "kind": "scored",
+      "shouldActivate": true,
+      "prompt": "分析 020_clean/sales.csv：2026 年 10 月相对 9 月，整体销售额为什么变化？请做归因分析，口径与期间见 020_clean/取数说明.md。把完整分析报告保存到 060_reports/analysis.md。",
+      "deliverablePath": "060_reports/analysis.md",
+      "expectedPoints": [
+        "六段契约齐全且顺序固定：数据口径与质量说明、趋势与结构、异常识别、指标拆解、洞察结论、行动建议与跟踪指标",
+        "整体销售额环比 +10%（9 月 600000 → 10 月 660000），数字出自脚本复算而非心算",
+        "指标拆解效应之和精确闭合；客单价＝销售额÷成交笔数（=100），不与人均消费混用",
+        "行动建议含做什么、谁做、何时完成、什么指标验证四要素",
+        "相关结论附「未做因果检验，需进一步验证」；样本量 12 条须声明"
+      ],
+      "assertions": [
+        {
+          "kind": "mustMatch",
+          "pattern": "一、数据口径与质量说明[\\s\\S]*二、趋势与结构[\\s\\S]*三、异常识别[\\s\\S]*四、指标拆解[\\s\\S]*五、洞察结论[\\s\\S]*六、行动建议与跟踪指标",
+          "note": "六段契约齐全且顺序固定（归因形态）"
+        },
+        { "kind": "mustContain", "value": "样本量", "note": "输入五项须声明样本量" },
+        {
+          "kind": "numeric",
+          "pattern": "销售额[^0-9]{0,20}环比[^0-9]{0,10}([0-9]+(?:\\.[0-9]+)?)\\s*%",
+          "expected": 10,
+          "tolerance": 0.5,
+          "note": "整体销售额环比 +10%（合成真值）"
+        },
+        { "kind": "mustNotMatch", "pattern": "作为一个?AI|作为AI助手|作为人工智能", "note": "禁止 AI 套话" }
+      ]
+    }
+  ]
+}
