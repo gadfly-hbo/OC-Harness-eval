@@ -39,6 +39,8 @@ export interface OptraCallExecutionOptions {
   hostFactory?: typeof startOptraCallHost;
   judgeExecution?: EvaluationExecution;
   fetchImpl?: FetchLike;
+  /** 能力开关模式：两侧 codeRoot 全等，唯一变量是 Host 启动 flag（按 variantId 分侧）。 */
+  capabilityToggle?: { baselineArgs: string[]; treatmentArgs: string[] };
 }
 
 interface SideState {
@@ -89,6 +91,9 @@ export function createOptraCallExecution(options: OptraCallExecutionOptions): Ev
     const host = await hostFactory({
       codeRoot: env.codeRoot, dataRoot: env.dataRoot, projectsRoot: env.projectsRoot,
       nodePath: options.nodePath, logPath: join(runRoot, `optracall-host-${side}.log`),
+      extraArgs: options.capabilityToggle
+        ? (side === "baseline" ? options.capabilityToggle.baselineArgs : options.capabilityToggle.treatmentArgs)
+        : undefined,
     });
     const client = new OptraCallClient(host.port, options.fetchImpl);
     const configuration = await client.putConfiguration(options.configuration);
@@ -97,11 +102,16 @@ export function createOptraCallExecution(options: OptraCallExecutionOptions): Ev
   };
 
   const runSubject = async (request: PiRunOptions): Promise<PiRunResult> => {
-    const side: OptraCallSide = (request.skillPaths?.length ?? 0) > 0 ? "skill" : "baseline";
+    const capability = options.capabilityToggle;
+    const side: OptraCallSide = capability
+      ? (request.variantId === "baseline" ? "baseline" : "skill")
+      : ((request.skillPaths?.length ?? 0) > 0 ? "skill" : "baseline");
     const env = envs[side];
-    const expectedSkillPaths = side === "skill" ? [env.skillPath!] : [];
-    if (JSON.stringify(request.skillPaths ?? []) !== JSON.stringify(expectedSkillPaths)) {
-      return stop("OPTRACALL_SKILL_IDENTITY_MISMATCH");
+    if (!capability) {
+      const expectedSkillPaths = side === "skill" ? [env.skillPath!] : [];
+      if (JSON.stringify(request.skillPaths ?? []) !== JSON.stringify(expectedSkillPaths)) {
+        return stop("OPTRACALL_SKILL_IDENTITY_MISMATCH");
+      }
     }
     const caseDir = dirname(request.workspaceRoot);
     const state = await ensureHost(side);

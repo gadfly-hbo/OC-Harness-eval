@@ -33,7 +33,8 @@ export interface OptraCallEnvironments {
   sourceRoot: string;
   commit: string | null;
   dirty: boolean | null;
-  skillName: string;
+  /** skill 模式为目标 skill 名；能力开关模式为 null（双 codeRoot 全等）。 */
+  skillName: string | null;
   baseline: OptraCallSideEnv;
   skill: OptraCallSideEnv;
   manifests: { baseline: OptraCallEnvManifest; skill: OptraCallEnvManifest };
@@ -100,20 +101,29 @@ function gitIdentity(sourceRoot: string): { commit: string | null; dirty: boolea
   return { commit: commit.stdout.trim(), dirty: status.stdout.trim().length > 0 };
 }
 
-/** 两份 manifest 的唯一允许差异：skill 侧多出目标 skill 包文件。 */
-export function diffEnvManifests(baseline: OptraCallEnvManifest, skill: OptraCallEnvManifest, skillName: string): string[] {
+/** skill 模式：唯一允许差异是 skill 侧多出目标 skill 包。能力模式（skillName=null）：两侧必须全等。 */
+export function diffEnvManifests(baseline: OptraCallEnvManifest, skill: OptraCallEnvManifest, skillName: string | null): string[] {
   const issues: string[] = [];
-  const prefix = join(SKILL_ROOT, skillName) + sep;
-  const skillOnly: Record<string, string> = {};
-  for (const [path, hash] of Object.entries(skill.files)) {
-    if (path.startsWith(prefix)) { skillOnly[path] = hash; continue; }
-    if (baseline.files[path] !== hash) issues.push(`两侧文件不一致：${path}`);
-  }
-  for (const path of Object.keys(baseline.files)) {
-    if (!(path in skill.files)) issues.push(`baseline 独有文件：${path}`);
-  }
-  if (!Object.keys(skillOnly).some(path => path === join(SKILL_ROOT, skillName, "SKILL.md"))) {
-    issues.push(`skill 侧缺少目标 skill 入口：${join(SKILL_ROOT, skillName, "SKILL.md")}`);
+  if (skillName === null) {
+    for (const [path, hash] of Object.entries(skill.files)) {
+      if (baseline.files[path] !== hash) issues.push(`两侧文件不一致：${path}`);
+    }
+    for (const path of Object.keys(baseline.files)) {
+      if (!(path in skill.files)) issues.push(`baseline 独有文件：${path}`);
+    }
+  } else {
+    const prefix = join(SKILL_ROOT, skillName) + sep;
+    const skillOnly: Record<string, string> = {};
+    for (const [path, hash] of Object.entries(skill.files)) {
+      if (path.startsWith(prefix)) { skillOnly[path] = hash; continue; }
+      if (baseline.files[path] !== hash) issues.push(`两侧文件不一致：${path}`);
+    }
+    for (const path of Object.keys(baseline.files)) {
+      if (!(path in skill.files)) issues.push(`baseline 独有文件：${path}`);
+    }
+    if (!Object.keys(skillOnly).some(path => path === join(SKILL_ROOT, skillName, "SKILL.md"))) {
+      issues.push(`skill 侧缺少目标 skill 入口：${join(SKILL_ROOT, skillName, "SKILL.md")}`);
+    }
   }
   if (baseline.nodeModulesTarget !== skill.nodeModulesTarget) issues.push("两侧 node_modules 目标不一致");
   if (JSON.stringify(baseline.sdk) !== JSON.stringify(skill.sdk)) issues.push("两侧 SDK 身份不一致");
@@ -122,13 +132,17 @@ export function diffEnvManifests(baseline: OptraCallEnvManifest, skill: OptraCal
 
 export function prepareOptraCallEnvironments(options: {
   sourceRoot: string;
-  skillName: string;
+  /** 提供则 skill 模式（baseline 删包）；缺省则能力开关模式（双 codeRoot 全等）。 */
+  skillName?: string;
   envRoot: string;
 }): OptraCallEnvironments {
   const sourceRoot = options.sourceRoot;
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(options.skillName)) throw new Error("OPTRACALL_SKILL_NAME_INVALID");
-  const skillSource = join(sourceRoot, SKILL_ROOT, options.skillName);
-  if (!existsSync(join(skillSource, "SKILL.md"))) throw new Error(`OPTRACALL_SKILL_MISSING: ${skillSource}`);
+  const skillName = options.skillName ?? null;
+  if (skillName !== null) {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(skillName)) throw new Error("OPTRACALL_SKILL_NAME_INVALID");
+    const skillSource = join(sourceRoot, SKILL_ROOT, skillName);
+    if (!existsSync(join(skillSource, "SKILL.md"))) throw new Error(`OPTRACALL_SKILL_MISSING: ${skillSource}`);
+  }
   const nodeModules = join(sourceRoot, "node_modules");
   if (!existsSync(nodeModules) || !lstatSync(nodeModules).isDirectory()) throw new Error("OPTRACALL_NODE_MODULES_MISSING: 源 checkout 须已安装依赖");
   if (existsSync(options.envRoot)) throw new Error("OPTRACALL_ENV_EXISTS: 环境目录已存在，禁止覆盖");
@@ -137,24 +151,25 @@ export function prepareOptraCallEnvironments(options: {
   for (const side of ["baseline", "skill"] as const) {
     const root = join(options.envRoot, side);
     const codeRoot = join(root, "code");
-    copyTree(sourceRoot, codeRoot, side === "baseline" ? join(sourceRoot, SKILL_ROOT, options.skillName) : null, EXCLUDED_TOP.map(name => join(sourceRoot, name)));
+    const removeSkill = skillName !== null && side === "baseline" ? join(sourceRoot, SKILL_ROOT, skillName) : null;
+    copyTree(sourceRoot, codeRoot, removeSkill, EXCLUDED_TOP.map(name => join(sourceRoot, name)));
     symlinkSync(nodeModules, join(codeRoot, "node_modules"), "dir");
     const dataRoot = join(root, "data"), projectsRoot = join(root, "projects");
     mkdirSync(dataRoot, { recursive: true, mode: 0o700 });
     mkdirSync(projectsRoot, { recursive: true, mode: 0o700 });
     sides[side] = {
       side, codeRoot, dataRoot, projectsRoot,
-      skillPath: side === "skill" ? join(codeRoot, SKILL_ROOT, options.skillName, "SKILL.md") : null,
+      skillPath: skillName !== null && side === "skill" ? join(codeRoot, SKILL_ROOT, skillName, "SKILL.md") : null,
     };
   }
   const manifests = {
     baseline: manifestOf(sides.baseline.codeRoot, nodeModules),
     skill: manifestOf(sides.skill.codeRoot, nodeModules),
   };
-  const issues = diffEnvManifests(manifests.baseline, manifests.skill, options.skillName);
+  const issues = diffEnvManifests(manifests.baseline, manifests.skill, skillName);
   if (issues.length) throw new Error(`OPTRACALL_ENV_IDENTITY: ${issues.join("；")}`);
   const { commit, dirty } = gitIdentity(sourceRoot);
-  return { sourceRoot, commit, dirty, skillName: options.skillName, baseline: sides.baseline, skill: sides.skill, manifests, excluded: EXCLUDED_TOP };
+  return { sourceRoot, commit, dirty, skillName, baseline: sides.baseline, skill: sides.skill, manifests, excluded: EXCLUDED_TOP };
 }
 
 /** 运行前后复核环境身份；返回漂移清单（空 = 一致）。 */

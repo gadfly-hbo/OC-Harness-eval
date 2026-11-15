@@ -22,6 +22,8 @@ export interface PiRunOptions {
   sessionId: string;
   /** 用例 ID（OptraCall 等按题准备初始材料的后端使用）。 */
   taskId?: string;
+  /** 变体 ID（能力开关模式按 id 区分 baseline/treatment）。 */
+  variantId?: string;
   /** 用户提示词。 */
   prompt: string;
   /** 模型标识，形如 `provider/model`。 */

@@ -14,7 +14,7 @@ export interface OptraCallRunManifest {
   sourceRoot: string;
   commit: string | null;
   dirty: boolean | null;
-  skillName: string;
+  skillName: string | null;
   sdk: { version: string; entrySha256: string } | null;
   envManifestHash: string;
   excluded: string[];

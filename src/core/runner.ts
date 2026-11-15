@@ -74,8 +74,13 @@ export interface EvalTask {
 export interface Variant {
   id: string;
   label: string;
-  /** 加载的 skill 路径。空数组 = baseline。 */
+  /** 加载的 skill 路径。skill 模式空数组 = baseline；能力开关模式两侧皆空，按 id 区分。 */
   skillPaths: string[];
+}
+
+/** baseline 以 variant.id 为准（能力开关模式两侧都无 skill）；兼容旧清单按空 skillPaths 回退。 */
+export function findBaselineVariant(variants: Variant[]): Variant | undefined {
+  return variants.find((v) => v.id === "baseline") ?? variants.find((v) => v.skillPaths.length === 0);
 }
 
 export interface RunnerOptions {
@@ -332,7 +337,7 @@ export async function runEvaluation(options: RunnerOptions): Promise<EvaluationS
   if (!Number.isSafeInteger(options.repeat) || options.repeat < 1 || !Number.isSafeInteger(judgeRepeat) || judgeRepeat < 1) {
     throw new Error("repeat/judgeRepeat 必须为正整数");
   }
-  const baseline = options.variants.find((variant) => variant.skillPaths.length === 0);
+  const baseline = findBaselineVariant(options.variants);
   const sessions: PlannedSession[] = [];
   for (const variant of options.variants) for (const task of options.tasks) for (let attempt = 1; attempt <= options.repeat; attempt++) {
     sessions.push({ phase: "subject", variantId: variant.id, taskId: task.id, attempt, status: "NOT_RUN" });
@@ -472,6 +477,7 @@ async function runCase(
     workspaceRoot,
     sessionId: `${options.runId}-${id}`,
     taskId: task.id,
+    variantId: variant.id,
     prompt,
     model: options.model,
     skillPaths: variant.skillPaths,
@@ -589,7 +595,7 @@ export async function judgeAll(
   runJudge: typeof runPairwiseJudge = runPairwiseJudge,
   state?: ExecutionStatus,
 ): Promise<PairwiseResult[]> {
-  const baseline = options.variants.find((variant) => variant.skillPaths.length === 0);
+  const baseline = findBaselineVariant(options.variants);
   if (!baseline) return [];
   const outputs: PairwiseResult[] = [];
   const baselineByKey = new Map(results.filter((r) => r.variantId === baseline.id).map((r) => [pairwiseKey(r.taskId, r.attempt), r]));
@@ -734,14 +740,14 @@ export function summarizeVariants(
   );
 
   const resultById = new Map(results.map((r) => [r.id, r]));
-  const baselineVariant = options.variants.find((v) => v.skillPaths.length === 0 || v.id === "baseline");
+  const baselineVariant = findBaselineVariant(options.variants);
   const baselineRows = baselineVariant ? results.filter((r) => r.variantId === baselineVariant.id) : [];
   const baselineSuccessful = baselineRows.filter((r) => r.status === "success" && scoredTaskIds.has(r.taskId));
   const baselineAvgTokens = average(baselineSuccessful.map((r) => r.totalTokens));
   const baselineAvgDurationSec = average(baselineSuccessful.map((r) => r.durationSec));
 
   return options.variants.map((variant) => {
-    const isBaseline = variant.skillPaths.length === 0 || variant.id === "baseline";
+    const isBaseline = baselineVariant !== undefined && variant.id === baselineVariant.id;
     const rows = results.filter((result) => result.variantId === variant.id);
     const successful = rows.filter((result) => result.status === "success");
 
@@ -897,8 +903,9 @@ export function summarizeTasks(
 ): TaskSummary[] {
   // 激活率只统计装了 skill 的 variant——baseline 按设计不加载 skill，
   // 把它算进分母会人为稀释激活率。
+  const taskBaseline = findBaselineVariant(options.variants);
   const skillVariantIds = new Set(
-    options.variants.filter((variant) => variant.skillPaths.length > 0).map((variant) => variant.id),
+    options.variants.filter((variant) => !taskBaseline || variant.id !== taskBaseline.id).map((variant) => variant.id),
   );
 
   return options.tasks.map((task) => {
@@ -1084,7 +1091,7 @@ export async function recomputeSummary(
   const effectiveOptions = { variants, tasks: options.tasks, repeat, judgeRepeat: frozen?.judgeRepeat ?? stored?.judgeRepeat, judgeSeed: frozen?.judgeSeed, runId: stored?.runId ?? frozen?.runId };
   const pairwise = recomputePairwise(runRoot, effectiveOptions, results);
   // 预定 pair 从冻结矩阵恢复，不能通过删除失败运行来缩小分母。
-  const baseline = variants.find((variant) => variant.id === "baseline" || variant.skillPaths.length === 0);
+  const baseline = findBaselineVariant(variants);
   if (baseline && repeat > 0) for (const variant of variants) {
     if (variant.id === baseline.id) continue;
     for (const task of collectionTasks) for (let attempt = 1; attempt <= repeat; attempt++) {
