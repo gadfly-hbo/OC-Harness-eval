@@ -54,12 +54,15 @@ export async function startOptraCallHost(options: {
   nodePath?: string;
   logPath: string;
   startupTimeoutMs?: number;
+  /** 额外 Host 启动 flag（如 --disable-experience-learning），承载能力开关唯一变量。 */
+  extraArgs?: string[];
 }): Promise<OptraCallHostHandle> {
   const nodePath = options.nodePath ?? resolveOptraCallNode();
   const log = createWriteStream(options.logPath, { flags: "a" });
   const child: ChildProcess = spawn(nodePath, [
     "scripts/start-host.mjs", "--port=0",
     `--data-root=${options.dataRoot}`, `--projects-root=${options.projectsRoot}`,
+    ...(options.extraArgs ?? []),
   ], { cwd: options.codeRoot, stdio: ["ignore", "pipe", "pipe"] });
   let closed = false;
   let exitError: Error | null = null;
