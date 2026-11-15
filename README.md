@@ -123,4 +123,6 @@ governance/        方法来源
 
 ## 工作规则
 
+**如何启动测评见 [测评流程与启动指南](docs/测评流程与启动.md)**（skill 完整可用；memory 地基就绪）。
+
 见 [AGENTS.md](AGENTS.md) 与 [测评器开发规范](docs/测评器开发规范.md)。方法与边界见 [驱动契约](docs/plans/2026-11-15-optracall-driver-contract.md)、[离线验收](docs/optracall驱动离线验收-2026-11-15.md)、[真实冒烟](docs/optracall真实冒烟-2026-11-15.md)。
