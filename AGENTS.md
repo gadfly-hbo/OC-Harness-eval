@@ -1,4 +1,4 @@
-# skill-eval 工作规则
+# OC-Harness-eval 工作规则
 
 本仓库在 **OptraCall 产品环境**里评估 Agent Skill 的实际价值。核心问题不是「skill 写得好不好」，而是**它是否被真正触发、触发后是否真正改善输出**。
 
