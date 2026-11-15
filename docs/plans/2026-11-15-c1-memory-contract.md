@@ -1,6 +1,6 @@
 # C1 · memory eval 接入 OptraCall 测试环境 · 契约草案
 
-日期：2026-11-15。状态：**契约草案**。真实运行未授权。起点由用户选定（C2 因 OptraCall 缺 `ir-eval.analysis-proof` 插桩暂缓，见 phase-c-integration 计划）。
+日期：2026-11-15。状态：**契约草案**。真实运行未授权。范围：仅 skill 与 memory 测评（prompt-ir、tool-usage 已删除，见 [phase-c-integration](2026-11-15-phase-c-integration.md)）。
 
 ## 决策问题
 
