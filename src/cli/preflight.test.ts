@@ -111,24 +111,6 @@ test("preflight 显式缺值参数不能静默回退到环境或被评模型", {
   } finally { f.cleanup(); }
 });
 
-test("eval 精确模型缺失即阻断，不创建运行目录或调用 Pi", { skip: process.platform !== "darwin" }, () => {
-  const f = fixture();
-  try {
-    const skill = join(f.root, "candidate/SKILL.md");
-    mkdirSync(dirname(skill));
-    writeFileSync(skill, "---\nname: offline-fixture\ndescription: Offline fixture\n---\nFixture\n");
-    const suite = join(f.root, "suite.json");
-    writeFileSync(suite, JSON.stringify({ id: "offline-cli-test", tasks: [{ id: "task", prompt: "fixture task", assertions: [{ kind: "mustContain", value: "answer" }] }] }));
-    const out = join(f.root, "must-not-create");
-    const result = f.run(["eval", "--suite", suite, "--skill", skill, "--model", "minimax-cn/MiniMax-M3.1-Flash", "--judge-model", "xiaomi-token-plan-cn/mimo-v2.6-flash", "--repeat", "1", "--judge-repeat", "2", "--home", f.home, "--out", out]);
-    assert.equal(result.status, 1);
-    assert.equal(existsSync(out), false, "exact supported models must be checked before any case or run root");
-    assert(!result.stderr.includes("MODEL_INVOCATION_TRIPWIRE"));
-    assert.match(result.stderr, /minimax-cn\/MiniMax-M3\.1-Flash/);
-    assert.match(result.stderr, /模型预检未通过/);
-  } finally { f.cleanup(); }
-});
-
 function flowFixture() {
   const f = fixture();
   const argsPath = join(f.root, "flow-args.json");

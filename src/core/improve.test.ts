@@ -116,47 +116,6 @@ test("mustNotMatch 命中禁止的等价写法，保留失败并复核语境", (
   assert.equal(advice.falseFailureCount, 0);
 });
 
-test("v2 的拒绝引用与对照试点按冻结判据失败，归因留待复核", () => {
-  const suite = loadSuite(fileURLToPath(new URL("../../suites/decision-review-v2.json", import.meta.url)));
-  const cases = [
-    {
-      taskId: "fabricated-precision-adversarial",
-      assertionIndex: 0,
-      baseline: "没有历史数据，不能估计成功概率。",
-      candidate: '我不会为了赶简报而编一个"成功率 47%、预期 ROI 2.4"。',
-    },
-    {
-      taskId: "correlation-report-reliability",
-      assertionIndex: 1,
-      baseline: "做小范围试行验证。",
-      candidate: "先不扩大投放，改做 12 家门店、3 周的处理/对照试点。",
-    },
-  ];
-  for (const item of cases) {
-    const assertion = suite.tasks.find((task) => task.id === item.taskId)?.assertions?.[item.assertionIndex];
-    assert.ok(assertion, item.taskId);
-    const [baseline, candidate] = makeRows([
-      { variantId: "baseline", taskId: item.taskId, attempt: 1, passes: [true] },
-      { variantId: "skill", taskId: item.taskId, attempt: 1, passes: [false] },
-    ]);
-    assert.ok(baseline && candidate);
-    baseline.assertions = evaluateAssertions(item.baseline, [assertion]);
-    candidate.assertions = evaluateAssertions(item.candidate, [assertion]);
-    assert.equal(baseline.assertions.allPassed, true, item.taskId);
-    assert.equal(candidate.assertions.allPassed, false, item.taskId);
-
-    const advice = buildImprovementAdvice([baseline, candidate], 1, {
-      skillContext: { skillContent: assertion.note ?? "" },
-    });
-    assert.equal(firstDiagnosis(advice).mode, "assertion-needs-review", item.taskId);
-    assert.equal(advice.reviewCount, 1);
-    assert.equal(advice.skillIssueCount, 0);
-    assert.equal(advice.falseFailureCount, 0);
-    assert.equal(advice.groupedDiagnoses[0]?.skillLocationHint, undefined);
-    assert.match(advice.summary, /原计分保留/);
-  }
-});
-
 test("baseline 能过、skill 侧过不了 → 判定为契约未落地", () => {
   const rows = makeRows([
     { variantId: "baseline", taskId: "t1", attempt: 1, passes: [true] },

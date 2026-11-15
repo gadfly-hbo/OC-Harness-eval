@@ -41,20 +41,6 @@ import {
 import { expandTilde } from "../core/paths.ts";
 import { evaluateGainFromResults, DEFAULT_GAIN_THRESHOLD_PP } from "../core/gain.ts";
 import { recoverMetaFromReport, mergeMeta } from "../core/report-meta.ts";
-import {
-  pendingRootFor,
-  registerPending,
-  readPendingState,
-  prunePendingAfterArchive,
-  ensurePendingRoot,
-} from "../core/pending.ts";
-import { toPendingJson } from "../core/pending-json.ts";
-import { detectRepoRoot as detectRepoRootCore } from "../core/repo-detect.ts";
-import {
-  archiveSkill,
-  collectArchiveInput,
-  type ArchiveResult,
-} from "../core/archive.ts";
 import { decideVerdict, type VerdictDecision } from "../core/verdict.ts";
 import {
   loadSuite,
@@ -183,39 +169,30 @@ function printHelp(): void {
   process.stdout.write(`skill-eval — 独立评估 Agent Skill 的激活率与实际增益
 
 用法：
-  skill-eval eval --suite <套件.json> --skill <SKILL.md> [选项]
+  skill-eval eval --suite <套件.json> --optracall <checkout> [选项]
   skill-eval preflight --model <provider/model> [--judge-model <provider/model>] [--home <dir>]
   skill-eval check --suite <套件.json> [--run <运行目录>] [--strict]
   skill-eval report --run <运行目录> [--suite-file <套件.json>]
-  skill-eval archive --run <运行目录> --skill <SKILL.md> [选项]
   skill-eval verify --original <原版目录> --broken <破坏版目录>
   skill-eval verify --generate-broken <SKILL.md> --out <输出目录>
   skill-eval calibrate --run <运行目录> --export <盲审表.json>
   skill-eval calibrate --run <运行目录> --score <已填盲审表.json>
-  skill-eval pending [--skill <SKILL.md> | --init | --json]
   skill-eval threshold [--score-drop <n>] [--activation-rate-drop <n>]
 
-eval 选项：
-  --suite <path>          评估套件定义（必填）
-  --skill <path>          被测 SKILL.md 路径（可覆盖套件中的设置）
+eval 选项（仅 OptraCall 产品环境套件）：
+  --suite <path>          评估套件定义（必填，须声明 optracall 段）
+  --optracall <path>      OptraCall checkout 路径（必填）
+  --optracall-node <path> Host/worker 解释器（Node 25+；默认当前解释器）
   --model <id>            被评模型：minimax-cn/MiniMax-M3.1-Flash
-  --models <id>           当前真实入口接受单个被评模型
   --judge-model <id>      评委：xiaomi-token-plan-cn/mimo-v2.6-flash（须显式指定或设置环境变量）
   --repeat <n>            每用例重复次数（默认取套件值或 ${DEFAULT_REPEAT}）
   --judge-repeat <n>      评委轮数，≥2 启用位置偏好探测（默认取套件值或 ${DEFAULT_JUDGE_REPEAT}）
   --out <dir>             输出目录（默认 runs/<run-id>）
-  --home <dir>            pi 隔离 HOME，避免污染全局配置
+  --home <dir>            pi 隔离 HOME（读取被评模型凭据），避免污染全局配置
   --context <text>        附加上下文前缀（覆盖套件）
   --no-keyword-signal     关闭关键词弱证据，仅用工具调用取证
   --timeout <ms>          显式设置单次运行超时（默认不设）
   --judge-timeout <ms>    显式设置评委单次超时（默认不设）
-  --llm-advice            已退役：使用报告中的离线改进建议
-  --archive-to <dir>      评估后把通过测评的 skill 归档到该仓库（默认归档到 <dir>/archive）
-  --archive-root <dir>    覆盖归档根目录（配合 --archive-to 使用）
-  --archive-version <id>  指定归档版本标识（默认 <frontmatter版本>__<时间戳>）
-  --allow-inconclusive    允许归档「结论不足」的评估（标记 provisional=true）
-  --allow-partial         允许归档存在部分超时/失败的跑批（标记 provisional=true）
-  --allow-low-gain        允许归档断言增益未达标的评估（标记 lowGain=true）
   --gain-threshold <pp>   增益门槛（百分点，默认 ${GAIN_THRESHOLD_PP}）
 
 当前模型费用记录配置：被评与评委使用模型原生上下文和输出上限，保留 SDK 原生思考与恢复。
@@ -261,14 +238,10 @@ async function main(): Promise<number> {
       return commandCheck(args);
     case "report":
       return await commandReport(args);
-    case "archive":
-      return await commandArchive(args);
     case "verify":
       return commandVerify(args);
     case "calibrate":
       return commandCalibrate(args);
-    case "pending":
-      return commandPending(args);
     case "threshold":
       return commandThreshold(args);
     case "help":
@@ -558,33 +531,19 @@ async function commandEval(args: CliArgs): Promise<number> {
   }
   const suiteDir = dirname(resolve(suitePath));
 
-  const skillFlag = flagString(args.flags, "skill");
-  const skillFromSuite = suite.skill?.path
-    ? isAbsolute(expandTilde(suite.skill.path))
-      ? expandTilde(suite.skill.path)
-      : resolve(suiteDir, expandTilde(suite.skill.path))
-    : undefined;
-  let skillPath = skillFlag ? resolve(expandTilde(skillFlag)) : skillFromSuite;
-
+  if (!suite.optracall) {
+    process.stderr.write("本入口仅支持 OptraCall 产品环境套件：套件须声明 optracall 段（skillName/templateDir）\n");
+    return 1;
+  }
   const optracallRoot = flagString(args.flags, "optracall");
+  if (!optracallRoot) {
+    process.stderr.write("产品环境套件需要 --optracall <OptraCall checkout 路径>\n");
+    return 1;
+  }
+  const skillPath = resolve(optracallRoot, "extensions", "analysis-assets", suite.optracall.skillName, "SKILL.md");
   let optracallNode: string | undefined;
-  if (suite.optracall) {
-    if (!optracallRoot) {
-      process.stderr.write("产品环境套件需要 --optracall <OptraCall checkout 路径>\n");
-      return 1;
-    }
-    skillPath = resolve(optracallRoot, "extensions", "analysis-assets", suite.optracall.skillName, "SKILL.md");
-    try { optracallNode = resolveOptraCallNode(flagString(args.flags, "optracall-node")); }
-    catch (error) { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); return 1; }
-  } else if (optracallRoot) {
-    process.stderr.write("--optracall 仅适用于声明了 optracall 段的产品环境套件\n");
-    return 1;
-  }
-
-  if (!skillPath) {
-    process.stderr.write("缺少被测 skill 路径：用 --skill 指定，或在套件中设置 skill.path\n");
-    return 1;
-  }
+  try { optracallNode = resolveOptraCallNode(flagString(args.flags, "optracall-node")); }
+  catch (error) { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); return 1; }
   if (!existsSync(skillPath)) {
     process.stderr.write(`被测 skill 不存在: ${skillPath}\n`);
     return 1;
@@ -661,48 +620,13 @@ async function commandEval(args: CliArgs): Promise<number> {
     gainThresholdPp,
     runtimeIdentity,
     signal: interruption.signal,
-    ...(suite.optracall ? { optracall: { sourceRoot: resolve(optracallRoot!), nodePath: optracallNode, suiteDir } } : {}),
+    optracall: { sourceRoot: resolve(optracallRoot), nodePath: optracallNode, suiteDir },
   }).finally(() => {
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", interrupt);
   });
 
   if (interruption.signal.aborted) return interruption.signal.reason === "EVALUATION_INTERRUPTED_SIGINT" ? 130 : 143;
-
-  const archiveTo = flagString(args.flags, "archive-to");
-  if (archiveTo) {
-    const repoRoot = resolve(archiveTo);
-    const archiveRoot = flagString(args.flags, "archive-root")
-      ? resolve(flagString(args.flags, "archive-root")!)
-      : join(repoRoot, "archive");
-
-    process.stderr.write(`\n归档到 ${repoRoot} …\n`);
-    const outcome = performArchive({
-      runDir: outDir,
-      skillPath,
-      summary,
-      decision,
-      archiveRoot,
-      repoRoot,
-      version: flagString(args.flags, "archive-version"),
-      allowInconclusive: args.flags["allow-inconclusive"] === true,
-      allowPartial: args.flags["allow-partial"] === true,
-      force: false,
-      suiteId: suite.id,
-      suiteVersion: suite.version,
-      suiteHash: suiteCheck.suiteHash,
-      skillVersion: suite.skill?.version,
-      gainThresholdPp,
-      allowLowGain: args.flags["allow-low-gain"] === true,
-    });
-
-    if (outcome.ok && outcome.result && outcome.input) {
-      printArchiveResult(outcome.result, outcome.input, decision);
-      prunePendingAfterArchiveSkill(outcome.result, repoRoot, args);
-    } else {
-      process.stderr.write("归档未完成，评估结论不受影响。\n");
-    }
-  }
 
   process.stdout.write(`${decision.verdict}\n${decision.reason}\n`);
   return summary.status === "success" ? 0 : 1;
@@ -843,132 +767,6 @@ async function commandReport(args: CliArgs): Promise<number> {
   return 0;
 }
 
-function performArchive(options: {
-  runDir: string;
-  skillPath: string;
-  summary: EvaluationSummary;
-  decision: VerdictDecision;
-  archiveRoot: string;
-  repoRoot: string | null;
-  version?: string | undefined;
-  allowInconclusive: boolean;
-  allowPartial: boolean;
-  force: boolean;
-  suiteId?: string | undefined;
-  suiteVersion?: string | undefined;
-  suiteHash?: string | undefined;
-  skillVersion?: string | undefined;
-  gainThresholdPp?: number | undefined;
-  allowLowGain?: boolean | undefined;
-}): { ok: boolean; result?: ArchiveResult; input?: ReturnType<typeof collectArchiveInput> } {
-  const { decision } = options;
-
-  if (!options.force) {
-    if (decision.verdict === "ineffective") {
-      process.stderr.write(
-        `拒绝归档：评估结论为「无效」。\n  ${decision.reason}\n` +
-          "  被证伪的 skill 不应进入归档区。可用 --force 强制归档（仅用于诊断）。\n",
-      );
-      return { ok: false };
-    }
-    if (decision.verdict === "inconclusive" && !options.allowInconclusive) {
-      process.stderr.write(
-        `拒绝归档：评估结论为「结论不足」。\n  ${decision.reason}\n` +
-          "  如确认需要临时留档，加 --allow-inconclusive 放行，归档后会在 latest.json 中标记 provisional=true。\n",
-      );
-      return { ok: false };
-    }
-    if (
-      options.summary.status === "partial" &&
-      !options.allowPartial &&
-      !options.allowInconclusive
-    ) {
-      process.stderr.write(
-        "拒绝归档：本次跑批存在失败或超时运行（status=partial），默认禁止归档为干净通过版本。\n" +
-          "  建议消除超时后重跑，或显式加 --allow-partial 放行（归档后标记 provisional=true）。\n",
-      );
-      return { ok: false };
-    }
-  }
-
-  const input = collectArchiveInput({
-    runDir: options.runDir,
-    skillPath: options.skillPath,
-    verdict: decision.verdict,
-    verdictReason: decision.reason,
-    expensive: decision.expensive,
-    summary: options.summary,
-    suiteId: options.suiteId,
-    suiteVersion: options.suiteVersion,
-    suiteHash: options.suiteHash,
-    skillVersion: options.skillVersion,
-  });
-
-  const thresholdPp = options.gainThresholdPp ?? DEFAULT_GAIN_THRESHOLD_PP;
-  const gainCheck = evaluateGainFromResults(options.summary.results, options.summary.variantSummaries.find((v) => v.variantId !== "baseline")?.variantId ?? "skill", thresholdPp, options.summary.tasks, options.summary.repeat);
-  if (!gainCheck.passed && !options.allowLowGain && !options.force) {
-    process.stderr.write(
-      `拒绝归档：断言增益未达标。\n  ${gainCheck.reason}\n` +
-        `  门槛 ${thresholdPp}pp 来自阴性对照实验——原版 skill +50.0pp，契约剥离后仅 +8.6pp。\n` +
-        "  确认 skill 确实带来了改善时，加 --allow-low-gain 放行（标记 lowGain=true）。\n",
-    );
-    return { ok: false };
-  }
-
-  let result: ArchiveResult;
-  try {
-    result = archiveSkill({
-      input,
-      runDir: options.runDir,
-      skillPath: options.skillPath,
-      archiveRoot: options.archiveRoot,
-      repoRoot: options.repoRoot ?? undefined,
-      version: options.version,
-      allowInconclusive: options.allowInconclusive,
-      gainCheck,
-    });
-  } catch (error) {
-    process.stderr.write(`归档失败：${error instanceof Error ? error.message : String(error)}\n`);
-    return { ok: false };
-  }
-
-  return { ok: true, result, input };
-}
-
-function printArchiveResult(
-  result: ArchiveResult,
-  input: { skillHash: string; gainCheck?: { passed: boolean; gainPp: number | null; thresholdPp: number } },
-  decision: VerdictDecision,
-): void {
-  if (result.skipped) {
-    process.stdout.write(`已存在同内容版本，跳过：${result.versionDir}\n`);
-    return;
-  }
-  process.stdout.write(`归档完成：${result.versionDir}\n`);
-  process.stdout.write(`  版本标识：${result.version}\n`);
-  const flags = [
-    decision.expensive || result.expensive ? "有效但昂贵" : "",
-    result.provisional ? "provisional" : "",
-    result.lowGain ? "low-gain" : "",
-    result.suiteDrift ? "suite-drift" : "",
-  ]
-    .filter(Boolean)
-    .join(" / ");
-  process.stdout.write(`  结论：${decision.verdict}${flags ? `（${flags}）` : ""}\n`);
-  if (input.gainCheck) {
-    const g = input.gainCheck.gainPp === null ? "不可判定" : `${input.gainCheck.gainPp.toFixed(1)} pp`;
-    process.stdout.write(
-      `  增益门槛：${g}（门槛 ${input.gainCheck.thresholdPp} pp）${input.gainCheck.passed ? "达标" : "未达标·已放行"}\n`,
-    );
-  }
-  if (result.suiteDrift) {
-    process.stdout.write("  ⚠️ 检测到与上一归档版本的套件哈希不同，跨版本指标不可直接横向对比。\n");
-  }
-  process.stdout.write(`  复制文件：${result.fileCount} 个（跳过噪声 ${result.skippedNoise} 项）\n`);
-  process.stdout.write(`  内容哈希：${input.skillHash}\n`);
-  process.stdout.write(`  索引：${join(result.archiveRoot, "latest.json")}\n`);
-}
-
 /**
  * 为 recomputeSummary 重建 variants。
  *
@@ -986,93 +784,6 @@ export function rebuildVariantsForRecompute(
     label: item.variantLabel,
     skillPaths: item.variantId === "baseline" ? [] : [skillPath],
   }));
-}
-
-async function commandArchive(args: CliArgs): Promise<number> {
-  const runDir = flagString(args.flags, "run");
-  if (!runDir) {
-    process.stderr.write("缺少 --run\n");
-    return 1;
-  }
-
-  const absoluteRun = resolve(runDir);
-  const summaryPath = join(absoluteRun, "summary.json");
-  if (!existsSync(summaryPath)) {
-    process.stderr.write(`未找到运行摘要：${summaryPath}\n`);
-    return 1;
-  }
-
-  const storedSummary = JSON.parse(readFileSync(summaryPath, "utf8")) as EvaluationSummary;
-
-  // 先解析 skill 路径，再重算：重建 variants 时非 baseline 必须带非空 skillPaths，
-  // 否则 runner 的 isBaseline（skillPaths.length === 0）把 skill 侧误判为 baseline，
-  // pairCoverage / winRateLowerBound 被置 null → decideVerdict 误拦为 inconclusive。
-  const skillFlag = flagString(args.flags, "skill");
-  const manifest = loadRunManifest(absoluteRun);
-  if (!manifest) {
-    process.stderr.write("拒绝归档：历史运行缺少冻结候选身份与运行清单；原始记录保留不变，需新建评估记录。\n");
-    return 1;
-  }
-  const inferred = frozenSkillPath(absoluteRun, manifest);
-  const skillPath = skillFlag ? resolve(expandTilde(skillFlag)) : inferred ? resolve(expandTilde(inferred)) : undefined;
-
-  if (!skillPath) {
-    process.stderr.write("无法确定被测 skill 路径：用 --skill 指定\n");
-    return 1;
-  }
-  if (!existsSync(skillPath)) {
-    process.stderr.write(`被测 skill 不存在：${skillPath}\n`);
-    return 1;
-  }
-
-  const summary = await recomputeSummary(absoluteRun, {
-    variants: manifest.variants,
-    tasks: manifest.tasks,
-    repeat: manifest.repeat,
-  });
-
-  const requestedGainThreshold = flagNumber(args.flags, "gain-threshold");
-  const gainThresholdPp = manifest.settings?.gainThresholdPp ?? GAIN_THRESHOLD_PP;
-  if (requestedGainThreshold !== undefined && requestedGainThreshold !== gainThresholdPp) {
-    process.stderr.write("拒绝归档：归档门槛不得修改运行前冻结的判定配置；请另建派生分析或新运行。\n");
-    return 1;
-  }
-  const decision = decideVerdict(summary, {
-    ...(gainThresholdPp !== undefined ? { gainThresholdPp } : {}),
-  });
-
-  const repoFlag = flagString(args.flags, "repo");
-  const repoRoot = repoFlag ? resolve(repoFlag) : detectRepoRoot(process.cwd());
-  const archiveRoot = flagString(args.flags, "archive-root")
-    ? resolve(flagString(args.flags, "archive-root")!)
-    : repoRoot
-      ? join(repoRoot, "archive")
-      : resolve("archive");
-
-  const outcome = performArchive({
-    runDir: absoluteRun,
-    skillPath,
-    summary,
-    decision,
-    archiveRoot,
-    repoRoot,
-    version: flagString(args.flags, "version"),
-    allowInconclusive: args.flags["allow-inconclusive"] === true,
-    allowPartial: args.flags["allow-partial"] === true,
-    force: args.flags["force"] === true,
-    suiteId: flagString(args.flags, "suite") ?? storedSummary.suiteMeta?.suiteId,
-    suiteVersion: flagString(args.flags, "suite-version") ?? storedSummary.suiteMeta?.suiteVersion,
-    suiteHash: storedSummary.suiteMeta?.suiteHash,
-    skillVersion: flagString(args.flags, "skill-version") ?? storedSummary.suiteMeta?.skillVersion,
-    gainThresholdPp,
-    allowLowGain: args.flags["allow-low-gain"] === true,
-  });
-
-  if (!outcome.ok || !outcome.result || !outcome.input) return 1;
-
-  printArchiveResult(outcome.result, outcome.input, decision);
-  prunePendingAfterArchiveSkill(outcome.result, repoRoot, args);
-  return 0;
 }
 
 /** 阴性对照元评估子命令（`skill-eval verify`）。 */
@@ -1227,110 +938,6 @@ function commandCalibrate(args: CliArgs): number {
 
   process.stderr.write("请指定 --export <盲审表.json> 或 --score <已填盲审表.json>\n");
   return 1;
-}
-
-function prunePendingAfterArchiveSkill(
-  result: ArchiveResult,
-  repoRoot: string | null,
-  args: CliArgs,
-): void {
-  if (!repoRoot) return;
-  const pendingRoot = flagString(args.flags, "pending-root");
-  if (!existsSync(pendingRootFor(repoRoot, pendingRoot))) return;
-
-  const skillName = basename(result.archiveRoot);
-  const outcome = prunePendingAfterArchive({
-    repoRoot,
-    movedSkillNames: [skillName],
-    pendingRoot,
-  });
-
-  if (outcome.removed.length > 0) {
-    process.stdout.write(`已从待测评区移出：${outcome.removed.join(", ")}\n`);
-  }
-  if (outcome.remaining > 0) {
-    process.stdout.write(`待测评区剩余 ${outcome.remaining} 个待测 skill。\n`);
-  } else {
-    process.stdout.write("待测评区已空，目录保留——可以继续往里放新的待测 skill。\n");
-  }
-}
-
-function commandPending(args: CliArgs): number {
-  const repoFlag = flagString(args.flags, "repo");
-  const repoRoot = repoFlag ? resolve(repoFlag) : detectRepoRoot(process.cwd());
-
-  if (!repoRoot) {
-    process.stderr.write("无法确定仓库根目录：用 --repo 指定。\n");
-    return 1;
-  }
-
-  const pendingRoot = flagString(args.flags, "pending-root");
-  const skillFlag = flagString(args.flags, "skill");
-
-  if (args.flags["init"] === true) {
-    const outcome = ensurePendingRoot({ repoRoot, pendingRoot });
-    process.stdout.write(
-      outcome.created
-        ? `已创建待测评区：${outcome.pendingRoot}\n`
-        : `待测评区已存在：${outcome.pendingRoot}\n`,
-    );
-    process.stdout.write("把待测评的 skill 文件夹直接放进这个目录即可。\n");
-    return 0;
-  }
-
-  if (skillFlag) {
-    const skillPath = resolve(expandTilde(skillFlag));
-    if (!existsSync(skillPath)) {
-      process.stderr.write(`skill 不存在：${skillPath}\n`);
-      return 1;
-    }
-    const outcome = registerPending({
-      repoRoot,
-      skillPath,
-      pendingRoot,
-      skillHash: hashFile(skillPath),
-    });
-    if (outcome.alreadyThere) {
-      process.stdout.write(`已在待测评区：${outcome.skillDir}\n`);
-    } else {
-      process.stdout.write(`已登记到待测评区：${outcome.skillDir}（${outcome.fileCount} 个文件）\n`);
-    }
-    return 0;
-  }
-
-  ensurePendingRoot({ repoRoot, pendingRoot });
-  const state = readPendingState({ repoRoot, pendingRoot });
-
-  if (args.flags["json"] === true) {
-    process.stdout.write(`${JSON.stringify(toPendingJson(state), null, 2)}\n`);
-    return 0;
-  }
-
-  if (!state.exists) {
-    process.stdout.write(`待测评区为空（目录不存在）：${state.pendingRoot}\n`);
-    return 0;
-  }
-  if (state.skills.length === 0) {
-    process.stdout.write(`待测评区为空：${state.pendingRoot}\n`);
-    process.stdout.write("把待测评的 skill 文件夹直接放进这个目录即可。\n");
-    return 0;
-  }
-
-  process.stdout.write(`待测评 skill（${state.skills.length} 个）：${state.pendingRoot}\n\n`);
-  for (const item of state.skills) {
-    const source = item.meta?.sourcePath ?? "未登记来源";
-    process.stdout.write(`  ${item.name}\n    来源：${source}\n`);
-  }
-  process.stdout.write("\n测评通过后 skill 会自动移入 archive/，暂存区本身保留常驻。\n");
-  return 0;
-}
-
-function detectRepoRoot(startDir: string): string | null {
-  return detectRepoRootCore({
-    startDir,
-    env: process.env,
-    cliFilePath: fileURLToPath(import.meta.url),
-  });
 }
 
 /** 查看全局判定门槛与回归门禁阈值。 */

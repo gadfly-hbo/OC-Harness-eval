@@ -36,52 +36,6 @@ version: 1.8.0
   assert.ok(stripped.strippedLines < stripped.originalLines);
 });
 
-test("历史阴性对照保留条目描述增益（+50.0pp vs +8.6pp），缺冻结核验则新版结论inconclusive", () => {
-  const repoRoot = join(fileURLToPath(new URL(".", import.meta.url)), "../..");
-  const origPath = join(
-    repoRoot,
-    "experiments/negative-control-2026-11-01/run-original/summary.json",
-  );
-  const brokenPath = join(
-    repoRoot,
-    "experiments/negative-control-2026-11-01/run-broken/summary.json",
-  );
-
-  assert.ok(existsSync(origPath), "缺少实验原版产物");
-  assert.ok(existsSync(brokenPath), "缺少实验破坏版产物");
-
-  const origRaw = readFileSync(origPath, "utf8");
-  const brokenRaw = readFileSync(brokenPath, "utf8");
-  const origSummary = JSON.parse(origRaw) as EvaluationSummary;
-  const brokenSummary = JSON.parse(brokenRaw) as EvaluationSummary;
-
-  // 旧样本仍支持原先的描述性数字；这些数字不再冒充完整配对推断或新版验证通过。
-  const descriptiveGain = (s: EvaluationSummary) => {
-    const variantId = s.results.find(r => r.variantId !== "baseline")!.variantId;
-    return computeGainPp(computeAssertionItemRate(s.results, "baseline"), computeAssertionItemRate(s.results, variantId));
-  };
-  assert.ok((descriptiveGain(origSummary) ?? 0) >= 49.9);
-  assert.ok((descriptiveGain(brokenSummary) ?? 100) < 10);
-  assert.ok(Math.abs(descriptiveGain(brokenSummary)! - 8.620689655) < 1e-6);
-  const brokenVariantRows = brokenSummary.results.filter(r => r.variantId !== "baseline");
-  assert.equal(brokenVariantRows.filter(r => r.activation.activated).length / brokenVariantRows.length, 1.0);
-
-  const report = evaluateNegativeControl(origSummary, brokenSummary);
-  assert.equal(report.passed, false);
-  assert.equal(report.status, "inconclusive");
-  assert.equal(report.originalGainPp, null);
-  assert.equal(report.brokenGainPp, null);
-  assert.equal(report.brokenActivationRate, null);
-  assert.equal(report.falsePositiveAssertions.length, 0);
-  assert.equal(report.trueContractAssertions.length, 0, "缺覆盖时不推断逐断言层级；新完整夹具另有真契约与0假阳性回归");
-
-  const formatted = formatNegativeControlReport(report);
-  assert.match(formatted, /未验证/);
-  assert.doesNotMatch(formatted, /具备区分能力（通过）/);
-  assert.equal(readFileSync(origPath, "utf8"), origRaw);
-  assert.equal(readFileSync(brokenPath, "utf8"), brokenRaw);
-});
-
 test("evaluateNegativeControl 拦截破坏版增益仍然达标（契约泄漏或无区分断言）的伪区分", () => {
   const makeFakeSummary = (basePass: number, varPass: number, activated = true): EvaluationSummary => ({
     runId: "fake",

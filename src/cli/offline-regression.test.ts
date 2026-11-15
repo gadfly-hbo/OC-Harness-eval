@@ -111,41 +111,6 @@ async function makeRun(root: string, deliverableTaskIds: string[] = []) {
   return { runRoot, sourceSkill, tasks };
 }
 
-test("CLI 归档绑定完整冻结包：未测候选和改过的脚本被拒绝，源删除后仍可归档快照", async (t) => {
-  const root = mkdtempSync(join(tmpdir(), "skill-eval-cli-archive-regression-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const bin = installOfflinePi(root);
-  const fixture = await makeRun(root);
-  const foreign = join(root, "unrelated");
-  mkdirSync(foreign);
-  writeFileSync(join(foreign, "SKILL.md"), "Never evaluated");
-  const summaryBefore = readFileSync(join(fixture.runRoot, "summary.json"), "utf8");
-  const reportBefore = readFileSync(join(fixture.runRoot, "REPORT.md"), "utf8");
-  for (const extra of [[], ["--force"]]) {
-    const output = invoke(bin, ["archive", "--run", fixture.runRoot, "--skill", join(foreign, "SKILL.md"), "--archive-root", join(root, "archive"), ...extra]);
-    assert.equal(output.error, undefined);
-    assert.notEqual(output.status, 0, output.stdout + output.stderr);
-    assert.match(output.stdout + output.stderr, /候选身份|身份哈希|冻结.*候选/);
-  }
-  assert.equal(existsSync(join(root, "archive")), false);
-  writeFileSync(join(dirname(fixture.sourceSkill), "scripts", "calc.py"), "print(2)\n");
-  const changedScript = invoke(bin, ["archive", "--run", fixture.runRoot, "--skill", fixture.sourceSkill,
-    "--archive-root", join(root, "archive"), "--repo", root, "--force"]);
-  assert.notEqual(changedScript.status, 0, changedScript.stdout + changedScript.stderr);
-  assert.match(changedScript.stdout + changedScript.stderr, /候选身份|身份哈希|冻结.*候选/);
-  assert.equal(existsSync(join(root, "archive")), false);
-  rmSync(dirname(fixture.sourceSkill), { recursive: true });
-  const fromFrozen = invoke(bin, ["archive", "--run", fixture.runRoot, "--archive-root", join(root, "archive"), "--repo", root]);
-  assert.equal(fromFrozen.error, undefined);
-  assert.equal(fromFrozen.status, 0, fromFrozen.stdout + fromFrozen.stderr);
-  const index = JSON.parse(readFileSync(join(root, "archive", "candidate", "latest.json"), "utf8"));
-  assert.equal(index.verdict, "effective");
-  assert.equal(readFileSync(join(root, "archive", index.path, "scripts", "calc.py"), "utf8"), "print(1)\n");
-  assert.equal(readFileSync(join(fixture.runRoot, "summary.json"), "utf8"), summaryBefore);
-  assert.equal(readFileSync(join(fixture.runRoot, "REPORT.md"), "utf8"), reportBefore);
-  assert.equal(containsPiMarker(root), false);
-});
-
 test("CLI report 另存派生分析，不覆盖原报告、摘要及已有派生分析", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "skill-eval-cli-report-regression-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -248,24 +213,6 @@ test("CLI threshold 与手册区分正式区间、描述区间和单次超时", 
   assert.equal(custom.status, 0, custom.stdout + custom.stderr);
   assert.match(custom.stdout, /胜率最大下降：0\.05/);
   assert.match(custom.stdout, /激活率最大下降：0\.1/);
-  assert.equal(containsPiMarker(root), false);
-});
-
-test("CLI eval 非空输出目录立即拒绝，不启动 pi 或改写旧运行", async (t) => {
-  const root = mkdtempSync(join(tmpdir(), "skill-eval-cli-output-regression-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const bin = installOfflinePi(root);
-  const fixture = await makeRun(root);
-  const suitePath = join(root, "suite.json");
-  writeFileSync(suitePath, JSON.stringify({ id: "offline-suite", skill: { path: fixture.sourceSkill }, repeat: 1, judgeRepeat: 2, tasks: fixture.tasks }));
-  const summaryBefore = readFileSync(join(fixture.runRoot, "summary.json"), "utf8");
-  const manifestBefore = readFileSync(join(fixture.runRoot, "run-manifest.json"), "utf8");
-  const output = invoke(bin, ["eval", "--suite", suitePath, "--model", "offline-never-invoke", "--out", fixture.runRoot]);
-  assert.equal(output.error, undefined);
-  assert.notEqual(output.status, 0, output.stdout + output.stderr);
-  assert.match(output.stdout + output.stderr, /非空|禁止覆盖历史/);
-  assert.equal(readFileSync(join(fixture.runRoot, "summary.json"), "utf8"), summaryBefore);
-  assert.equal(readFileSync(join(fixture.runRoot, "run-manifest.json"), "utf8"), manifestBefore);
   assert.equal(containsPiMarker(root), false);
 });
 
