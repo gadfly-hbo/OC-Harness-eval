@@ -1,0 +1,40 @@
+{
+  "id": "optracall-memory-smoke",
+  "name": "OptraCall 产品环境 · memory 最小冒烟（单题）",
+  "description": "真实最小冒烟：1 题 × 2 侧 × 1 次 + 1 轮盲评。唯一变量是 read_case_sources 记忆能力有无（--disable-experience-learning）。处理侧注入合成记忆判断卡片。单题仅作链路诊断。需 memory-eval --optracall <checkout>。",
+  "version": "0.1.0",
+  "optracall": {
+    "capability": "memory",
+    "memoryFixtures": [
+      {
+        "caseTitle": "门店缺货核查事项",
+        "caseStatus": "observing",
+        "judgment": {
+          "kind": "hypothesis",
+          "title": "缺货归因待核",
+          "statement": "历史判断：A 门店缺货更可能源于补货周期错配，而非需求突增；已有权限不等于已执行补货。需核对补货记录与需求曲线后再定论，未做因果检验。"
+        }
+      }
+    ]
+  },
+  "repeat": 1,
+  "judgeRepeat": 1,
+  "tasks": [
+    {
+      "id": "recall-stockout",
+      "kind": "scored",
+      "shouldActivate": true,
+      "prompt": "我们要核查 A 门店的缺货问题。请先查阅是否有相关的历史判断或经验来源，再结合 020_clean/取数说明.md 给出核查思路。把结论保存到 060_reports/analysis.md。",
+      "deliverablePath": "060_reports/analysis.md",
+      "expectedPoints": [
+        "应主动检索历史记忆（read_case_sources），找到缺货归因待核的判断卡片",
+        "引用历史判断时区分判断/执行/效果，注明未做因果检验",
+        "不被记忆直接当作已证实结论，保留待核态度"
+      ],
+      "assertions": [
+        { "kind": "mustContain", "value": "缺货", "note": "结论围绕缺货问题" },
+        { "kind": "mustNotMatch", "pattern": "作为一个?AI|作为AI助手", "note": "禁止 AI 套话" }
+      ]
+    }
+  ]
+}

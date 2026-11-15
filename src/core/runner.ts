@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 import { createControlledExecution, validateControlledPlan, type EvaluationExecution } from "./execution.ts";
 import type { NativeModelLimitsByRole } from "./controlled-budget.ts";
 import { detectActivation, summarizeActivation, parseFrontmatter, type ActivationResult } from "./activation.ts";
+import { memoryToActivation } from "./optracall-memory.ts";
 import { detectContamination, type ContaminationReport } from "./contamination.ts";
 import { evaluateAssertions, type Assertion, type AssertionReport } from "./assertions.ts";
 import {
@@ -496,12 +497,14 @@ async function runCase(
   const deliveryError = deliverable && deliverable.status !== "present" ? deliverable.reason : null;
   const failed = sessionFailed || deliveryError !== null;
 
-  const activation = detectActivation({
-    skillPaths: variant.skillPaths,
-    readPaths: run.metrics.readPaths,
-    output,
-    keywordSignal: options.keywordSignal,
-  });
+  const activation = run.memoryUsage
+    ? memoryToActivation(run.memoryUsage)
+    : detectActivation({
+        skillPaths: variant.skillPaths,
+        readPaths: run.metrics.readPaths,
+        output,
+        keywordSignal: options.keywordSignal,
+      });
 
   // 污染检测：baseline 侧若自行读到了被测 skill 或会泄漏 skill 路径的元数据文件，
   // 对照实验的唯一变量就被破坏了——该次运行的输出不能代表「不装 skill」的水平。

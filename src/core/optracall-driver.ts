@@ -214,6 +214,11 @@ export class OptraCallClient {
     await this.request("POST", `/api/projects/${projectId}/tasks/${taskId}/stop`, {});
   }
 
+  /** 初始化 Case 存储（memory Fixture 注入前须先建库）。 */
+  async initializeCaseStore(): Promise<void> {
+    await this.request("POST", "/api/cases/storage/initialize", {});
+  }
+
   /** 轮询任务 lastRun 直到本轮终态；超时先 stop 再返回 timedOut。Host 退出抛 HostFault。 */
   async waitTerminal(projectId: string, taskId: string, requestId: string, options: {
     timeoutMs?: number;

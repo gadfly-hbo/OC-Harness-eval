@@ -21,6 +21,8 @@ export interface OptraCallRunManifest {
   nodePath: string | null;
   configuration: { provider: string; model: string; baseUrl: string; api: string; thinkingLevel: string | null };
   templateHashes?: Record<string, string>;
+  /** 能力开关模式标记（memory）；skill 模式无此字段。 */
+  capability?: string;
 }
 export interface RunManifest {
   schemaVersion: 1;

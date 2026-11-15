@@ -232,6 +232,8 @@ async function main(): Promise<number> {
   switch (args.command) {
     case "eval":
       return await commandEval(args);
+    case "memory-eval":
+      return await commandMemoryEval(args);
     case "preflight":
       return await commandPreflight(args);
     case "check":
@@ -540,6 +542,8 @@ async function commandEval(args: CliArgs): Promise<number> {
     process.stderr.write("产品环境套件需要 --optracall <OptraCall checkout 路径>\n");
     return 1;
   }
+  if (suite.optracall.capability === "memory") { process.stderr.write("memory 套件请用 memory-eval 命令\n"); return 1; }
+  if (!suite.optracall.skillName) { process.stderr.write("skill 套件须声明 optracall.skillName\n"); return 1; }
   const skillPath = resolve(optracallRoot, "extensions", "analysis-assets", suite.optracall.skillName, "SKILL.md");
   let optracallNode: string | undefined;
   try { optracallNode = resolveOptraCallNode(flagString(args.flags, "optracall-node")); }
@@ -630,6 +634,110 @@ async function commandEval(args: CliArgs): Promise<number> {
 
   process.stdout.write(`${decision.verdict}\n${decision.reason}\n`);
   return summary.status === "success" ? 0 : 1;
+}
+
+/**
+ * memory 测评：能力开关模式（read_case_sources 有无），复用 runner 与计分引擎。
+ */
+async function commandMemoryEval(args: CliArgs): Promise<number> {
+  rejectUnbudgetedAdvice(args.flags);
+  const suitePath = flagString(args.flags, "suite");
+  if (!suitePath) { process.stderr.write("缺少 --suite\n"); return 1; }
+  const suite = loadSuite(suitePath);
+  const suiteCheck = checkSuite(suite);
+  if (!suiteCheck.valid) { process.stderr.write(`套件存在阻断性错误：\n  ${suiteCheck.errors.join("\n  ")}\n`); return 1; }
+  if (suite.optracall?.capability !== "memory") { process.stderr.write("memory-eval 需要套件声明 optracall.capability=memory 与 memoryFixtures\n"); return 1; }
+  const fixtures = suite.optracall.memoryFixtures!;
+  const optracallRoot = flagString(args.flags, "optracall");
+  if (!optracallRoot) { process.stderr.write("memory 测评需要 --optracall <OptraCall checkout 路径>\n"); return 1; }
+  let optracallNode: string | undefined;
+  try { optracallNode = resolveOptraCallNode(flagString(args.flags, "optracall-node")); }
+  catch (error) { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); return 1; }
+
+  const { modelList, singleModel, models, judgeOverride, piHome } = modelSelection(args.flags);
+  if (modelList.length === 0 && !singleModel) { process.stderr.write("缺少被评模型：用 --model 指定\n"); return 1; }
+  if (modelList.length > 1) { process.stderr.write("当前入口只接受单个被评模型\n"); return 1; }
+  const model = (modelList[0] ?? singleModel)!;
+  const judgeModel = judgeOverride ?? model;
+  const repeat = positiveInteger(args.flags, "repeat", suite.repeat ?? DEFAULT_REPEAT);
+  const judgeRepeat = positiveInteger(args.flags, "judge-repeat", suite.judgeRepeat ?? DEFAULT_JUDGE_REPEAT);
+  const timeoutMs = flagNumber(args.flags, "timeout");
+  const judgeTimeoutMs = flagNumber(args.flags, "judge-timeout");
+  const keywordSignal = args.flags["no-keyword-signal"] !== true;
+  const gainThresholdPp = flagNumber(args.flags, "gain-threshold");
+  validateControlledPlan({ model, judgeModel, plannedSessions: suite.tasks.length * repeat * (2 + judgeRepeat) });
+  const modelCheck = await preflightModels({ models, judgeModel: judgeOverride, home: piHome });
+  if (!modelCheck.valid) { process.stderr.write(`模型预检未通过：\n  ${modelCheck.errors.join("\n  ")}\n`); return 1; }
+  if (!modelCheck.runtime?.sdkEntrySha256) throw new Error("PI_SDK_IDENTITY_MISSING");
+  const runtimeIdentity: EvaluationRuntimeIdentity = { evaluator: captureEvaluatorIdentity(), piSdk: modelCheck.runtime };
+  const limitsFor = (role: "subject" | "judge", reference: string) => {
+    const native = modelCheck.models.find(entry => entry.role === role && entry.requested === reference)?.model;
+    if (!native || !Number.isSafeInteger(native.contextWindow) || !Number.isSafeInteger(native.maxTokens)) throw new Error(`模型目录缺少原生 token 上限：${reference}`);
+    return { contextWindow: native.contextWindow!, maxOutputTokens: native.maxTokens! };
+  };
+  const nativeLimits: NativeModelLimitsByRole = { subject: limitsFor("subject", model), judge: limitsFor("judge", judgeModel) };
+
+  const runId = newRunId();
+  const outDir = flagString(args.flags, "out") ? resolve(flagString(args.flags, "out")!) : resolve("runs", runId);
+  const interruption = new AbortController();
+  const interrupt = (signal: NodeJS.Signals) => interruption.abort(`EVALUATION_INTERRUPTED_${signal}`);
+  process.on("SIGINT", interrupt); process.on("SIGTERM", interrupt);
+  try {
+    assertFreshRunRoot(outDir);
+    const fixturesSrcDir = join(outDir, ".frozen", "memory-src");
+    mkdirSync(fixturesSrcDir, { recursive: true });
+    const fixturesPath = join(fixturesSrcDir, "memory-fixtures.json");
+    writeFileSync(fixturesPath, JSON.stringify(fixtures, null, 2));
+    const frozen = freezeSkill(fixturesPath, join(outDir, ".frozen", "memory"));
+    const envs = prepareOptraCallEnvironments({ sourceRoot: resolve(optracallRoot), envRoot: join(outDir, "optracall-env") });
+    const configuration = optracallConfiguration(readPiApiKey(piHome, OPTRACALL_SUBJECT_PROFILE.provider));
+    const suiteDir = dirname(resolve(suitePath));
+    const execution = createOptraCallExecution({
+      mode: "real", runRoot: outDir, envs, model, judgeModel, nativeLimits,
+      judgePlannedSessions: suite.tasks.length * repeat * judgeRepeat, home: piHome, configuration,
+      templateFor: taskId => loadOptraCallTemplate(suiteDir, suite, taskId),
+      nodePath: optracallNode, signal: interruption.signal, timeoutMs,
+      capabilityToggle: { baselineArgs: ["--disable-experience-learning"], treatmentArgs: [] },
+      memoryFixtures: fixtures,
+    });
+    const variants: Variant[] = [
+      { id: "baseline", label: "Baseline（无记忆能力）", skillPaths: [] },
+      { id: "memory", label: "Memory（read_case_sources 可用）", skillPaths: [] },
+    ];
+    const effectiveSuiteHash = hashSuite({ ...suite, contextPrefix: suite.contextPrefix });
+    const templateHashes = Object.fromEntries(suite.tasks.map(task => [task.id, hashTemplate(loadOptraCallTemplate(suiteDir, suite, task.id))]));
+    const manifest: RunManifest = {
+      schemaVersion: 1, policyVersion: EVALUATION_POLICY_VERSION, runId, model, judgeModel, repeat, judgeRepeat, judgeSeed: runId,
+      tasks: suite.tasks, variants, runtimeIdentity,
+      settings: { gainThresholdPp: gainThresholdPp ?? GAIN_THRESHOLD_PP, timeoutMs, judgeTimeoutMs, keywordSignal, nodeVersion: process.version, nativeLimits },
+      candidate: { identity: frozen.identity, snapshotDir: relativeSnapshotDir(outDir, frozen.skillPath), originalSkillPath: fixturesPath },
+      suiteMeta: { suiteId: suite.id, suiteVersion: suite.version ?? "未标注", suiteHash: effectiveSuiteHash, skillVersion: "memory-fixtures", skillPath: fixturesPath },
+      optracall: { ...optracallManifestSection(envs, configuration, optracallNode), templateHashes, capability: "memory" },
+    };
+    saveRunManifest(outDir, manifest);
+    process.stderr.write(`开始 memory 测评：${suite.id}\n  模型：${model}（评委：${judgeModel}）\n  用例 ${suite.tasks.length} × 变体 2 × 重复 ${repeat}\n  输出：${outDir}\n\n`);
+    const summary = await runEvaluation({
+      runRoot: outDir, runId, manifest, judgeSeed: runId, model, judgeModel, nativeLimits, signal: interruption.signal,
+      variants, tasks: suite.tasks, repeat, judgeRepeat, home: piHome, keywordSignal, timeoutMs, judgeTimeoutMs,
+      execution, skillPathForContamination: "", skillDirForContamination: "",
+      onProgress: event => process.stderr.write(`  [${event.phase}] ${event.message}\n`),
+    });
+    summary.suiteMeta = manifest.suiteMeta;
+    writeFileSync(join(outDir, "summary.json"), JSON.stringify(summary, null, 2));
+    const decision = decideVerdict(summary, { ...(gainThresholdPp !== undefined ? { gainThresholdPp } : {}) });
+    const skillContext = buildSkillDocContext(frozen.skillPath, summary);
+    const report = renderReport({
+      summary, meta: { skillPath: fixturesPath, skillHash: frozen.identity.hash, skillVersion: "memory-fixtures", suiteId: suite.id, suiteVersion: suite.version ?? "未标注", suiteHash: effectiveSuiteHash, runRoot: outDir, piHome: piHome ?? null, generatedAt: new Date().toISOString() },
+      tasks: suite.tasks, variants, verdict: decision.verdict, expensive: decision.expensive, verdictReason: decision.reason, skillContext, calibration: loadCalibrationIfPresent(outDir),
+    });
+    writeFileSync(join(outDir, "REPORT.md"), report);
+    process.stderr.write(`\n报告已生成：${join(outDir, "REPORT.md")}\n`);
+    if (interruption.signal.aborted) return interruption.signal.reason === "EVALUATION_INTERRUPTED_SIGINT" ? 130 : 143;
+    process.stdout.write(`${decision.verdict}\n${decision.reason}\n`);
+    return summary.status === "success" ? 0 : 1;
+  } finally {
+    process.off("SIGINT", interrupt); process.off("SIGTERM", interrupt);
+  }
 }
 
 /**

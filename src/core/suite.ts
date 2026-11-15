@@ -26,8 +26,11 @@ export interface SuiteFile {
   judgeRepeat?: number;
   /** 声明本套件面向 OptraCall 产品环境对照（需 eval --optracall <checkout>）。 */
   optracall?: {
-    skillName: string;
+    skillName?: string;
     templateDir?: string;
+    /** 能力开关模式：memory 测评（read_case_sources 有无）。 */
+    capability?: "memory";
+    memoryFixtures?: Array<{ caseTitle: string; caseStatus?: "pending" | "analyzing" | "awaiting_confirmation" | "observing"; judgment: { kind: "hypothesis" | "strategy"; title: string; statement: string } }>;
   };
   tasks: EvalTask[];
 }
@@ -78,7 +81,7 @@ export function hashSuite(suite: SuiteFile): string {
   const payload = canonicalize({
     id: suite.id,
     contextPrefix: suite.contextPrefix ?? null,
-    optracall: suite.optracall ? { skillName: suite.optracall.skillName, templateDir: suite.optracall.templateDir ?? null } : null,
+    optracall: suite.optracall ? { skillName: suite.optracall.skillName ?? null, templateDir: suite.optracall.templateDir ?? null, capability: suite.optracall.capability ?? null, memoryFixtures: suite.optracall.memoryFixtures ?? null } : null,
     tasks: suite.tasks.map((t) => ({
       id: t.id,
       prompt: t.prompt,
@@ -124,7 +127,11 @@ export function loadSuite(suitePath: string): SuiteFile {
     }
   }
   if (parsed.optracall !== undefined) {
-    if (!parsed.optracall.skillName || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(parsed.optracall.skillName)) {
+    if (parsed.optracall.capability === "memory") {
+      if (!Array.isArray(parsed.optracall.memoryFixtures) || parsed.optracall.memoryFixtures.length === 0) {
+        throw new Error("memory 套件须声明非空 optracall.memoryFixtures");
+      }
+    } else if (!parsed.optracall.skillName || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(parsed.optracall.skillName)) {
       throw new Error("optracall.skillName 必须是安全的 skill 目录名");
     }
   }

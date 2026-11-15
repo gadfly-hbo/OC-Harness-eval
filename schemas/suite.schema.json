@@ -48,18 +48,46 @@
     },
     "optracall": {
       "type": "object",
-      "description": "声明本套件面向 OptraCall 产品环境对照；需 eval --optracall <checkout>",
+      "description": "声明本套件面向 OptraCall 产品环境对照；需 eval --optracall <checkout>。skill 模式用 skillName；memory 模式用 capability+memoryFixtures",
       "additionalProperties": false,
-      "required": ["skillName"],
       "properties": {
         "skillName": {
           "type": "string",
           "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
-          "description": "OptraCall extensions/analysis-assets 下的目标 skill 目录名"
+          "description": "skill 模式：OptraCall extensions/analysis-assets 下的目标 skill 目录名"
         },
         "templateDir": {
           "type": "string",
           "description": "套件级初始资料模板目录（相对套件文件），含 010_draw/020_clean 子目录"
+        },
+        "capability": {
+          "type": "string",
+          "enum": ["memory"],
+          "description": "能力开关模式：memory 测评（read_case_sources 有无）"
+        },
+        "memoryFixtures": {
+          "type": "array",
+          "minItems": 1,
+          "description": "memory 模式：注入处理侧的合成记忆判断卡片",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["caseTitle", "judgment"],
+            "properties": {
+              "caseTitle": { "type": "string", "minLength": 1 },
+              "caseStatus": { "type": "string", "enum": ["pending", "analyzing", "awaiting_confirmation", "observing"] },
+              "judgment": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "title", "statement"],
+                "properties": {
+                  "kind": { "type": "string", "enum": ["hypothesis", "strategy"] },
+                  "title": { "type": "string", "minLength": 1 },
+                  "statement": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
         }
       }
     },

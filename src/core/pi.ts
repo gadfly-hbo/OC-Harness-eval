@@ -85,6 +85,8 @@ export interface PiRunResult {
   stderr: string;
   timedOut: boolean;
   isolation: IsolationVerification;
+  /** 能力开关（memory）模式的记忆使用取证；skill 模式无此字段。 */
+  memoryUsage?: import("./optracall-memory.ts").MemoryUsage;
 }
 
 export function emptyMetrics(): PiRunMetrics {

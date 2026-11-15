@@ -13,6 +13,7 @@ import { emptyMetrics, type PiRunOptions, type PiRunResult } from "./pi.ts";
 import { verifyOptraCallEnvironments, type OptraCallEnvironments, type OptraCallSide } from "./optracall-env.ts";
 import { OptraCallClient, OptraCallHostFault, startOptraCallHost, newRequestId, type FetchLike, type OptraCallConfigurationInput, type OptraCallHostHandle } from "./optracall-driver.ts";
 import { collectCaseEvidence, parseNativeSession } from "./optracall-evidence.ts";
+import { seedMemoryFixtures, detectMemoryUsage, type MemoryFixture } from "./optracall-memory.ts";
 import type { BudgetSnapshot } from "./controlled-budget.ts";
 
 export interface OptraCallTemplateFile {
@@ -41,6 +42,8 @@ export interface OptraCallExecutionOptions {
   fetchImpl?: FetchLike;
   /** 能力开关模式：两侧 codeRoot 全等，唯一变量是 Host 启动 flag（按 variantId 分侧）。 */
   capabilityToggle?: { baselineArgs: string[]; treatmentArgs: string[] };
+  /** memory 测评：注入处理侧的合成记忆 Fixture（baseline 不注入）。 */
+  memoryFixtures?: MemoryFixture[];
 }
 
 interface SideState {
@@ -63,6 +66,7 @@ export function createOptraCallExecution(options: OptraCallExecutionOptions): Ev
     skill: { host: null, client: null, configurationId: null },
   };
   const usedSessions = new Set<string>();
+  const seededSides = new Set<OptraCallSide>();
   const ledgerPath = join(runRoot, "optracall-ledger.jsonl");
   let subjectStopped: string | null = null;
   let finalized = false;
@@ -115,6 +119,11 @@ export function createOptraCallExecution(options: OptraCallExecutionOptions): Ev
     }
     const caseDir = dirname(request.workspaceRoot);
     const state = await ensureHost(side);
+    if (capability && side === "skill" && options.memoryFixtures?.length && !seededSides.has(side)) {
+      await state.client!.initializeCaseStore();
+      seedMemoryFixtures(env.dataRoot, options.memoryFixtures);
+      seededSides.add(side);
+    }
     const client = state.client!;
     const projectId = (await client.createProject(`eval-${request.sessionId}`, state.configurationId!)).id;
     const task = await client.createTask(projectId, request.sessionId, state.configurationId!);
@@ -138,6 +147,10 @@ export function createOptraCallExecution(options: OptraCallExecutionOptions): Ev
       ? readFileSync(join(caseDir, "optracall", "native-session.jsonl"), "utf8")
       : "";
     const parsed = parseNativeSession(nativeText, join(projectDir, "020_clean"));
+    const memoryUsage = capability ? detectMemoryUsage(parsed.events) : undefined;
+    if (memoryUsage) {
+      writeFileSync(join(caseDir, "optracall", "memory.json"), JSON.stringify(memoryUsage, null, 2), "utf8");
+    }
 
     // 边界核验：项目与会话必须落在本侧评测根内；运行后环境身份不得漂移。
     const issues: string[] = [];
@@ -161,7 +174,7 @@ export function createOptraCallExecution(options: OptraCallExecutionOptions): Ev
       nativeSession: evidence.nativeSession, isolationVerified: isolation.verified,
     });
     if (drift.length) { subjectStopped ??= `OPTRACALL_ENV_DRIFT: ${drift.join("；")}`; }
-    return { exitCode, metrics: parsed.metrics, events: parsed.events, stderr, timedOut, isolation };
+    return { exitCode, metrics: parsed.metrics, events: parsed.events, stderr, timedOut, isolation, ...(memoryUsage ? { memoryUsage } : {}) };
   };
 
   return {
