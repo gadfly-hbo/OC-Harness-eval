@@ -13,7 +13,8 @@ import { emptyMetrics, type PiRunOptions, type PiRunResult } from "./pi.ts";
 import { verifyOptraCallEnvironments, type OptraCallEnvironments, type OptraCallSide } from "./optracall-env.ts";
 import { OptraCallClient, OptraCallHostFault, startOptraCallHost, newRequestId, type FetchLike, type OptraCallConfigurationInput, type OptraCallHostHandle } from "./optracall-driver.ts";
 import { collectCaseEvidence, parseNativeSession } from "./optracall-evidence.ts";
-import { seedMemoryFixtures, detectMemoryUsage, type MemoryFixture } from "./optracall-memory.ts";
+import { seedMemoryFixtures, type MemoryFixture } from "./optracall-memory.ts";
+import { CAPABILITIES, detectCapabilityUsage, seedSapMethods, type CapabilityId, type SapMethodFixture } from "./optracall-capabilities.ts";
 import type { BudgetSnapshot } from "./controlled-budget.ts";
 
 export interface OptraCallTemplateFile {
@@ -42,7 +43,11 @@ export interface OptraCallExecutionOptions {
   fetchImpl?: FetchLike;
   /** 能力开关模式：两侧 codeRoot 全等，唯一变量是 Host 启动 flag（按 variantId 分侧）。 */
   capabilityToggle?: { baselineArgs: string[]; treatmentArgs: string[] };
-  /** memory 测评：注入处理侧的合成记忆 Fixture（baseline 不注入）。 */
+  /** 能力 id（memory/sap-method/case-decision）；缺省 memory。决定取证工具与 Fixture 注入方式。 */
+  capabilityId?: CapabilityId;
+  /** 通用能力 Fixture（按 capabilityId 解释）；处理侧注入，baseline 不注入。 */
+  capabilityFixtures?: Array<Record<string, unknown>>;
+  /** memory 测评 Fixture（兼容旧入口；等价 capabilityId=memory + capabilityFixtures）。 */
   memoryFixtures?: MemoryFixture[];
 }
 
@@ -119,9 +124,16 @@ export function createOptraCallExecution(options: OptraCallExecutionOptions): Ev
     }
     const caseDir = dirname(request.workspaceRoot);
     const state = await ensureHost(side);
-    if (capability && side === "skill" && options.memoryFixtures?.length && !seededSides.has(side)) {
-      await state.client!.initializeCaseStore();
-      seedMemoryFixtures(env.dataRoot, options.memoryFixtures);
+    const capId: CapabilityId = options.capabilityId ?? "memory";
+    const fixtures = options.capabilityFixtures ?? options.memoryFixtures ?? [];
+    if (capability && side === "skill" && fixtures.length && !seededSides.has(side)) {
+      if (capId === "sap-method") {
+        await seedSapMethods(state.client!, fixtures as unknown as SapMethodFixture[]);
+      } else {
+        // memory 与 case-decision 都注入 Case 判断卡片（case-decision 另需任务绑定）。
+        await state.client!.initializeCaseStore();
+        seedMemoryFixtures(env.dataRoot, fixtures as unknown as MemoryFixture[]);
+      }
       seededSides.add(side);
     }
     const client = state.client!;
@@ -147,7 +159,7 @@ export function createOptraCallExecution(options: OptraCallExecutionOptions): Ev
       ? readFileSync(join(caseDir, "optracall", "native-session.jsonl"), "utf8")
       : "";
     const parsed = parseNativeSession(nativeText, join(projectDir, "020_clean"));
-    const memoryUsage = capability ? detectMemoryUsage(parsed.events) : undefined;
+    const memoryUsage = capability ? detectCapabilityUsage(parsed.events, CAPABILITIES[options.capabilityId ?? "memory"]) : undefined;
     if (memoryUsage) {
       writeFileSync(join(caseDir, "optracall", "memory.json"), JSON.stringify(memoryUsage, null, 2), "utf8");
     }

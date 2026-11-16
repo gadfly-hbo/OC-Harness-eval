@@ -155,7 +155,7 @@ export class OptraCallClient {
     this.fetchImpl = fetchImpl ?? ((input, init) => fetch(input, init));
   }
 
-  private async request(method: string, path: string, body?: unknown): Promise<any> {
+  async request(method: string, path: string, body?: unknown): Promise<any> {
     let response: Response;
     try {
       response = await this.fetchImpl(`http://127.0.0.1:${this.port}${path}`, {

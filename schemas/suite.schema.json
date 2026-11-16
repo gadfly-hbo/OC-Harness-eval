@@ -62,8 +62,14 @@
         },
         "capability": {
           "type": "string",
-          "enum": ["memory"],
-          "description": "能力开关模式：memory 测评（read_case_sources 有无）"
+          "enum": ["memory", "sap-method", "case-decision"],
+          "description": "能力开关模式：memory（M6 跨事项经验）/ sap-method（SAP 分析方法）/ case-decision（M5 当前 Case 判断）"
+        },
+        "capabilityFixtures": {
+          "type": "array",
+          "minItems": 1,
+          "description": "能力 Fixture（按 capability 解释）：memory/case-decision 用判断卡片 {caseTitle,judgment}；sap-method 用方法 {title,content:{conditions,logic,judgment,limits}}",
+          "items": { "type": "object" }
         },
         "memoryFixtures": {
           "type": "array",

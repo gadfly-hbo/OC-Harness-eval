@@ -1,0 +1,40 @@
+{
+  "id": "optracall-sap-smoke",
+  "name": "OptraCall 产品环境 · SAP 分析方法最小冒烟（单题）",
+  "description": "真实最小冒烟：1 题 × 2 侧 × 1 次 + 1 轮盲评。唯一变量是 SAP 分析方法查读能力有无（--disable-sap-methods）。处理侧注入并发布合成分析方法。单题仅作链路诊断。需 capability-eval --optracall <checkout>。",
+  "version": "0.1.0",
+  "optracall": {
+    "capability": "sap-method",
+    "capabilityFixtures": [
+      {
+        "title": "渠道转化率变动拆解",
+        "content": {
+          "conditions": "适用于各渠道转化率同比/环比变动归因；需各渠道 visitor 与 conversion 两期数据，分母口径一致。",
+          "logic": "总转化率＝Σ(渠道权重×渠道转化率)；权重＝渠道 visitor÷总 visitor。变动拆解为结构效应（权重变化）与水平效应（渠道转化率变化），逐项闭合到总变动。",
+          "judgment": "先核分母口径与期间等长，再按 visitor 加权；结构效应与水平效应之和须精确闭合到总变动（差额≤0.01pp）。",
+          "limits": "缺基期 visitor 时无法计算结构效应，保留 UNKNOWN；不得用会话数代替访客数做权重；未做因果检验。"
+        }
+      }
+    ]
+  },
+  "repeat": 1,
+  "judgeRepeat": 1,
+  "tasks": [
+    {
+      "id": "conversion-attribution",
+      "kind": "scored",
+      "shouldActivate": true,
+      "prompt": "我们要拆解整体转化率的变动归因。请先查阅是否有适用的已发布分析方法，再结合 020_clean/取数说明.md 给出拆解思路。把结论保存到 060_reports/analysis.md。",
+      "deliverablePath": "060_reports/analysis.md",
+      "expectedPoints": [
+        "应主动检索已发布 SAP 分析方法（read_semantic_context），找到渠道转化率变动拆解方法",
+        "按 visitor 加权拆解结构效应与水平效应，注明闭合校验",
+        "缺基期数据时保留 UNKNOWN，不用会话数代替访客数"
+      ],
+      "assertions": [
+        { "kind": "mustContain", "value": "转化率", "note": "结论围绕转化率拆解" },
+        { "kind": "mustNotMatch", "pattern": "作为一个?AI|作为AI助手", "note": "禁止 AI 套话" }
+      ]
+    }
+  ]
+}

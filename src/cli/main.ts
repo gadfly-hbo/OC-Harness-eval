@@ -87,6 +87,7 @@ import { prepareOptraCallEnvironments } from "../core/optracall-env.ts";
 import { createOptraCallExecution } from "../core/optracall-execution.ts";
 import { resolveOptraCallNode } from "../core/optracall-driver.ts";
 import { OPTRACALL_SUBJECT_PROFILE, optracallConfiguration, readPiApiKey, loadOptraCallTemplate, optracallManifestSection, hashTemplate } from "../core/optracall-setup.ts";
+import { CAPABILITIES } from "../core/optracall-capabilities.ts";
 
 interface CliArgs {
   command: string;
@@ -233,7 +234,8 @@ async function main(): Promise<number> {
     case "eval":
       return await commandEval(args);
     case "memory-eval":
-      return await commandMemoryEval(args);
+    case "capability-eval":
+      return await commandCapabilityEval(args);
     case "preflight":
       return await commandPreflight(args);
     case "check":
@@ -542,7 +544,7 @@ async function commandEval(args: CliArgs): Promise<number> {
     process.stderr.write("产品环境套件需要 --optracall <OptraCall checkout 路径>\n");
     return 1;
   }
-  if (suite.optracall.capability === "memory") { process.stderr.write("memory 套件请用 memory-eval 命令\n"); return 1; }
+  if (suite.optracall.capability) { process.stderr.write("能力套件请用 capability-eval 命令\n"); return 1; }
   if (!suite.optracall.skillName) { process.stderr.write("skill 套件须声明 optracall.skillName\n"); return 1; }
   const skillPath = resolve(optracallRoot, "extensions", "analysis-assets", suite.optracall.skillName, "SKILL.md");
   let optracallNode: string | undefined;
@@ -639,17 +641,18 @@ async function commandEval(args: CliArgs): Promise<number> {
 /**
  * memory 测评：能力开关模式（read_case_sources 有无），复用 runner 与计分引擎。
  */
-async function commandMemoryEval(args: CliArgs): Promise<number> {
+async function commandCapabilityEval(args: CliArgs): Promise<number> {
   rejectUnbudgetedAdvice(args.flags);
   const suitePath = flagString(args.flags, "suite");
   if (!suitePath) { process.stderr.write("缺少 --suite\n"); return 1; }
   const suite = loadSuite(suitePath);
   const suiteCheck = checkSuite(suite);
   if (!suiteCheck.valid) { process.stderr.write(`套件存在阻断性错误：\n  ${suiteCheck.errors.join("\n  ")}\n`); return 1; }
-  if (suite.optracall?.capability !== "memory") { process.stderr.write("memory-eval 需要套件声明 optracall.capability=memory 与 memoryFixtures\n"); return 1; }
-  const fixtures = suite.optracall.memoryFixtures!;
+  const capability = suite.optracall?.capability;
+  if (!capability || !CAPABILITIES[capability]) { process.stderr.write("capability-eval 需要套件声明 optracall.capability=memory/sap-method/case-decision 与 capabilityFixtures\n"); return 1; }
+  const fixtures = (suite.optracall!.capabilityFixtures ?? suite.optracall!.memoryFixtures)!;
   const optracallRoot = flagString(args.flags, "optracall");
-  if (!optracallRoot) { process.stderr.write("memory 测评需要 --optracall <OptraCall checkout 路径>\n"); return 1; }
+  if (!optracallRoot) { process.stderr.write("能力测评需要 --optracall <OptraCall checkout 路径>\n"); return 1; }
   let optracallNode: string | undefined;
   try { optracallNode = resolveOptraCallNode(flagString(args.flags, "optracall-node")); }
   catch (error) { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); return 1; }
@@ -684,11 +687,11 @@ async function commandMemoryEval(args: CliArgs): Promise<number> {
   process.on("SIGINT", interrupt); process.on("SIGTERM", interrupt);
   try {
     assertFreshRunRoot(outDir);
-    const fixturesSrcDir = join(outDir, ".frozen", "memory-src");
+    const fixturesSrcDir = join(outDir, ".frozen", "capability-src");
     mkdirSync(fixturesSrcDir, { recursive: true });
-    const fixturesPath = join(fixturesSrcDir, "memory-fixtures.json");
+    const fixturesPath = join(fixturesSrcDir, "capability-fixtures.json");
     writeFileSync(fixturesPath, JSON.stringify(fixtures, null, 2));
-    const frozen = freezeSkill(fixturesPath, join(outDir, ".frozen", "memory"));
+    const frozen = freezeSkill(fixturesPath, join(outDir, ".frozen", "capability"));
     const envs = prepareOptraCallEnvironments({ sourceRoot: resolve(optracallRoot), envRoot: join(outDir, "optracall-env") });
     const configuration = optracallConfiguration(readPiApiKey(piHome, OPTRACALL_SUBJECT_PROFILE.provider));
     const suiteDir = dirname(resolve(suitePath));
@@ -697,12 +700,12 @@ async function commandMemoryEval(args: CliArgs): Promise<number> {
       judgePlannedSessions: suite.tasks.length * repeat * judgeRepeat, home: piHome, configuration,
       templateFor: taskId => loadOptraCallTemplate(suiteDir, suite, taskId),
       nodePath: optracallNode, signal: interruption.signal, timeoutMs,
-      capabilityToggle: { baselineArgs: ["--disable-experience-learning"], treatmentArgs: [] },
-      memoryFixtures: fixtures,
+      capabilityToggle: { baselineArgs: [CAPABILITIES[capability].disableFlag], treatmentArgs: [] },
+      capabilityId: capability, capabilityFixtures: fixtures,
     });
     const variants: Variant[] = [
-      { id: "baseline", label: "Baseline（无记忆能力）", skillPaths: [] },
-      { id: "memory", label: "Memory（read_case_sources 可用）", skillPaths: [] },
+      { id: "baseline", label: `Baseline（无${CAPABILITIES[capability].label}能力）`, skillPaths: [] },
+      { id: "treatment", label: `Treatment（${CAPABILITIES[capability].label}可用）`, skillPaths: [] },
     ];
     const effectiveSuiteHash = hashSuite({ ...suite, contextPrefix: suite.contextPrefix });
     const templateHashes = Object.fromEntries(suite.tasks.map(task => [task.id, hashTemplate(loadOptraCallTemplate(suiteDir, suite, task.id))]));
@@ -711,11 +714,11 @@ async function commandMemoryEval(args: CliArgs): Promise<number> {
       tasks: suite.tasks, variants, runtimeIdentity,
       settings: { gainThresholdPp: gainThresholdPp ?? GAIN_THRESHOLD_PP, timeoutMs, judgeTimeoutMs, keywordSignal, nodeVersion: process.version, nativeLimits },
       candidate: { identity: frozen.identity, snapshotDir: relativeSnapshotDir(outDir, frozen.skillPath), originalSkillPath: fixturesPath },
-      suiteMeta: { suiteId: suite.id, suiteVersion: suite.version ?? "未标注", suiteHash: effectiveSuiteHash, skillVersion: "memory-fixtures", skillPath: fixturesPath },
-      optracall: { ...optracallManifestSection(envs, configuration, optracallNode), templateHashes, capability: "memory" },
+      suiteMeta: { suiteId: suite.id, suiteVersion: suite.version ?? "未标注", suiteHash: effectiveSuiteHash, skillVersion: `${capability}-fixtures`, skillPath: fixturesPath },
+      optracall: { ...optracallManifestSection(envs, configuration, optracallNode), templateHashes, capability },
     };
     saveRunManifest(outDir, manifest);
-    process.stderr.write(`开始 memory 测评：${suite.id}\n  模型：${model}（评委：${judgeModel}）\n  用例 ${suite.tasks.length} × 变体 2 × 重复 ${repeat}\n  输出：${outDir}\n\n`);
+    process.stderr.write(`开始 ${capability} 能力测评：${suite.id}\n  模型：${model}（评委：${judgeModel}）\n  用例 ${suite.tasks.length} × 变体 2 × 重复 ${repeat}\n  输出：${outDir}\n\n`);
     const summary = await runEvaluation({
       runRoot: outDir, runId, manifest, judgeSeed: runId, model, judgeModel, nativeLimits, signal: interruption.signal,
       variants, tasks: suite.tasks, repeat, judgeRepeat, home: piHome, keywordSignal, timeoutMs, judgeTimeoutMs,
@@ -727,7 +730,7 @@ async function commandMemoryEval(args: CliArgs): Promise<number> {
     const decision = decideVerdict(summary, { ...(gainThresholdPp !== undefined ? { gainThresholdPp } : {}) });
     const skillContext = buildSkillDocContext(frozen.skillPath, summary);
     const report = renderReport({
-      summary, meta: { skillPath: fixturesPath, skillHash: frozen.identity.hash, skillVersion: "memory-fixtures", suiteId: suite.id, suiteVersion: suite.version ?? "未标注", suiteHash: effectiveSuiteHash, runRoot: outDir, piHome: piHome ?? null, generatedAt: new Date().toISOString() },
+      summary, meta: { skillPath: fixturesPath, skillHash: frozen.identity.hash, skillVersion: `${capability}-fixtures`, suiteId: suite.id, suiteVersion: suite.version ?? "未标注", suiteHash: effectiveSuiteHash, runRoot: outDir, piHome: piHome ?? null, generatedAt: new Date().toISOString() },
       tasks: suite.tasks, variants, verdict: decision.verdict, expensive: decision.expensive, verdictReason: decision.reason, skillContext, calibration: loadCalibrationIfPresent(outDir),
     });
     writeFileSync(join(outDir, "REPORT.md"), report);

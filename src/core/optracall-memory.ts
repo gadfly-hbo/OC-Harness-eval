@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import type { PiEvent } from "./pi.ts";
 import type { ActivationResult } from "./activation.ts";
+import { detectCapabilityUsage, CAPABILITIES, type CapabilityUsage } from "./optracall-capabilities.ts";
 
 export interface MemoryFixture {
   caseTitle: string;
@@ -115,53 +116,11 @@ export function seedMemoryFixtures(dataRoot: string, fixtures: MemoryFixture[]):
   }
 }
 
-export interface MemoryUsage {
-  /** 是否成功使用记忆（find 或 read 成功）；工具不可用时的失败尝试不算。 */
-  consulted: boolean;
-  findCalls: number;
-  successfulFindCalls: number;
-  readCalls: number;
-  /** find 的查询词。 */
-  queries: string[];
-  /** read 命中的判断卡片目标。 */
-  readTargets: Array<{ caseId: string; recordId: string; revision: number }>;
-  /** 读取是否成功（非 isError）。 */
-  successfulReads: number;
-}
+export type MemoryUsage = CapabilityUsage;
 
-/** 从 native 事件流取证 read_case_sources 的 find/read 行为。 */
+/** 从 native 事件流取证 read_case_sources 的 find/read 行为（通用取证器的 memory 特化）。 */
 export function detectMemoryUsage(events: PiEvent[]): MemoryUsage {
-  const usage: MemoryUsage = { consulted: false, findCalls: 0, successfulFindCalls: 0, readCalls: 0, queries: [], readTargets: [], successfulReads: 0 };
-  const pending = new Map<string, { action: string; target?: any }>();
-  for (const event of events) {
-    if (event.type === "tool_execution_start" && event.toolName === "read_case_sources") {
-      const args = (event.args ?? {}) as { action?: string; query?: string; target?: any };
-      const id = typeof event.toolCallId === "string" ? event.toolCallId : "";
-      if (args.action === "find") {
-        usage.findCalls += 1;
-        if (typeof args.query === "string" && args.query.trim()) usage.queries.push(args.query);
-      } else if (args.action === "read") {
-        usage.readCalls += 1;
-      }
-      pending.set(id, { action: String(args.action ?? ""), target: args.target });
-    } else if (event.type === "tool_execution_end") {
-      const id = typeof event.toolCallId === "string" ? event.toolCallId : "";
-      const call = pending.get(id);
-      pending.delete(id);
-      if (!call || event.isError !== false) continue;
-      if (call.action === "find") {
-        usage.successfulFindCalls += 1;
-      } else if (call.action === "read") {
-        usage.successfulReads += 1;
-        const target = call.target;
-        if (target && typeof target === "object" && typeof target.caseId === "string" && typeof target.recordId === "string") {
-          usage.readTargets.push({ caseId: target.caseId, recordId: target.recordId, revision: Number(target.revision ?? 0) });
-        }
-      }
-    }
-  }
-  usage.consulted = usage.successfulFindCalls > 0 || usage.successfulReads > 0;
-  return usage;
+  return detectCapabilityUsage(events, CAPABILITIES.memory);
 }
 
 /** 把记忆使用映射为激活结果（consulted = 激活），复用 runner 的激活率统计。 */

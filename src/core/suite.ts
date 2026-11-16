@@ -28,8 +28,11 @@ export interface SuiteFile {
   optracall?: {
     skillName?: string;
     templateDir?: string;
-    /** 能力开关模式：memory 测评（read_case_sources 有无）。 */
-    capability?: "memory";
+    /** 能力开关模式：memory（M6）/ sap-method（SAP 方法）/ case-decision（M5）。 */
+    capability?: "memory" | "sap-method" | "case-decision";
+    /** 能力 Fixture（按 capability 解释）：memory/case-decision 用判断卡片，sap-method 用方法正文。 */
+    capabilityFixtures?: Array<Record<string, unknown>>;
+    /** memory 专用 Fixture（兼容旧套件）。 */
     memoryFixtures?: Array<{ caseTitle: string; caseStatus?: "pending" | "analyzing" | "awaiting_confirmation" | "observing"; judgment: { kind: "hypothesis" | "strategy"; title: string; statement: string } }>;
   };
   tasks: EvalTask[];
@@ -81,7 +84,7 @@ export function hashSuite(suite: SuiteFile): string {
   const payload = canonicalize({
     id: suite.id,
     contextPrefix: suite.contextPrefix ?? null,
-    optracall: suite.optracall ? { skillName: suite.optracall.skillName ?? null, templateDir: suite.optracall.templateDir ?? null, capability: suite.optracall.capability ?? null, memoryFixtures: suite.optracall.memoryFixtures ?? null } : null,
+    optracall: suite.optracall ? { skillName: suite.optracall.skillName ?? null, templateDir: suite.optracall.templateDir ?? null, capability: suite.optracall.capability ?? null, capabilityFixtures: suite.optracall.capabilityFixtures ?? null, memoryFixtures: suite.optracall.memoryFixtures ?? null } : null,
     tasks: suite.tasks.map((t) => ({
       id: t.id,
       prompt: t.prompt,
@@ -127,9 +130,13 @@ export function loadSuite(suitePath: string): SuiteFile {
     }
   }
   if (parsed.optracall !== undefined) {
-    if (parsed.optracall.capability === "memory") {
-      if (!Array.isArray(parsed.optracall.memoryFixtures) || parsed.optracall.memoryFixtures.length === 0) {
-        throw new Error("memory 套件须声明非空 optracall.memoryFixtures");
+    if (parsed.optracall.capability) {
+      if (!["memory", "sap-method", "case-decision"].includes(parsed.optracall.capability)) {
+        throw new Error("optracall.capability 须为 memory/sap-method/case-decision");
+      }
+      const fixtures = parsed.optracall.capabilityFixtures ?? parsed.optracall.memoryFixtures;
+      if (!Array.isArray(fixtures) || fixtures.length === 0) {
+        throw new Error("能力套件须声明非空 optracall.capabilityFixtures（或 memoryFixtures）");
       }
     } else if (!parsed.optracall.skillName || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(parsed.optracall.skillName)) {
       throw new Error("optracall.skillName 必须是安全的 skill 目录名");
