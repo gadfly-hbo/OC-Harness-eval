@@ -72,6 +72,19 @@ node --experimental-strip-types src/cli/main.ts preflight \
 
 ## S2 套件就绪
 
+### 从用户方向到规范套件（草拟 → 确认 → 再跑）
+
+实操中用户通常只简要说明测评方向，不直接写套件。按此协作流程：
+
+1. **用户给方向**：简要说明测哪个能力（memory/sap-method）、业务场景、想验证什么。
+2. **Agent 草拟规范套件**：按《案例与prompt编写指南》（`docs/案例与prompt编写指南.md`）把方向扩写成规范套件——任务 prompt（需要该能力的情境＋冻结交付物）、Fixture（方法正文/历史经验）、断言（行为约束）、边界/诊断题、合成数据与自洽真值。参考 `suites/examples/sap-method-conversion.json`、`suites/examples/memory-stockout.json`。
+3. **呈现确认**：把草拟的 prompt、Fixture、断言、矩阵规模展示给用户，请其确认或调整。**用户未确认不跑。**
+4. **确认后冻结**：用户确认 → 冻结套件 → 进 S3。
+
+用户也可直给现成套件路径，跳过草拟直接进冻结。
+
+### 套件要点
+
 - 任务创造「需要该能力」的情境，冻结交付文件名（`deliverablePath`）。
 - Fixture：memory 用 `{caseTitle, judgment:{kind,title,statement}}`；sap-method 用 `{title, content:{conditions,logic,judgment,limits}}`。设计正例与干扰项。
 - 断言检验能力使用行为约束，非措辞。私有真值存 `.local/`。

@@ -100,6 +100,17 @@ node --experimental-strip-types src/cli/main.ts preflight \
 
 ## S2 套件就绪
 
+### 从用户方向到规范套件（草拟 → 确认 → 再跑）
+
+实操中用户通常只简要说明测评方向，不直接写套件。按此协作流程：
+
+1. **用户给方向**：简要说明测哪个 skill、业务场景、想验证什么。
+2. **Agent 草拟规范套件**：按《案例与prompt编写指南》（`docs/案例与prompt编写指南.md`）把方向扩写成规范套件——任务 prompt（触发 skill 契约的情境＋冻结交付物）、断言（行为约束）、诊断/负向题、合成数据与自洽真值。参考 `suites/examples/skill-data-analysis.json`。
+3. **呈现确认**：把草拟的 prompt、断言、矩阵规模展示给用户，请其确认或调整。**用户未确认不跑。**
+4. **确认后冻结**：用户确认 → 冻结套件 → 进 G1/S3。
+
+用户也可直给现成套件路径，跳过草拟直接进冻结。
+
 ### 生成或选择套件
 
 - 套件面向 OptraCall 产品环境：任务文本冻结交付文件名（如 `060_reports/analysis.md`），`deliverablePath` 指向它。

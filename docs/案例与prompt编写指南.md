@@ -2,6 +2,8 @@
 
 三类测评（skill / sap-method / memory）的任务 prompt 与 Fixture 怎么写。示例套件在 `suites/examples/`，可直接改改用。
 
+> **实操不必自己写套件**：你只需简要说明测评方向（测什么、业务场景、想验证什么），Agent 会按本指南草拟成规范套件（prompt＋Fixture＋断言＋矩阵），**呈现给你确认后再跑**。三个测评 skill（`/skill-eval-flow`、`/capability-eval-flow`、`/memory-eval-flow`）的 S2 都内置了这个「草拟→确认→再跑」流程。本指南供你了解规范、审阅草拟结果，或自行编写时参考。
+
 > 通用前提：任务 prompt 两侧完全一致；交付物文件名在 prompt 里冻结（如「保存到 `060_reports/analysis.md`」）；断言先于结果冻结，检验**行为约束**而非措辞；私有真值放 `.local/`。
 
 ---
