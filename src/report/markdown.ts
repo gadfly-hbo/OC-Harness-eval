@@ -193,6 +193,23 @@ export function renderReport(options: ReportOptions): string {
     lines.push("");
   }
 
+  // ---- 指标大白话解释（方便非专业读者一眼看懂）----
+  lines.push("### 指标怎么读（大白话）");
+  lines.push("");
+  lines.push("| 指标 | 它是什么 | 怎么看 |");
+  lines.push("| --- | --- | --- |");
+  lines.push("| 激活率 | 装了 skill（或开了记忆）后，模型真的去读 skill / 查记忆的比例 | 越高说明越常被触发；低＝没被用上。skill 看读取，memory 看成功查读 |");
+  lines.push("| 原始评委胜率 | 匿名评委觉得「装 skill 的答案更好」的比例 | 只是参考；样本少时波动大，不能单独凭它下结论 |");
+  lines.push("| 覆盖率 / 胜率下界 | 覆盖率＝该判的配对实际判了多少；下界＝把没判和失败的都算输后的保守胜率 | 覆盖 ≥70%、下界 ≥50% 才算稳 |");
+  lines.push("| 规则纠偏胜率 | 用客观断言校正评委后的胜率（评委说好、但断言显示没改善的会被扣掉） | **正式判定看这个**，比原始胜率更可信 |");
+  lines.push("| 断言条目通过率 | 预设硬性检查（如六段齐全、数值正确）通过的比例 | 两侧对比：装 skill 后更高＝有改善；仅作描述 |");
+  lines.push("| 任务等权配对增益 | 装 skill 比不装平均多通过多少（百分点 pp），带 95% 置信区间 | **区间跨 0＝证据不足**，不能下结论；≥+10pp 且区间不跨 0 才算显著改善 |");
+  lines.push("| 平均耗时 / token | 装 skill 后是否更慢、更费 | expensive＝成本偏高，需权衡收益 |");
+  lines.push("| 判定 | effective＝有效；inconclusive＝证据不足；ineffective＝无效 | 单题冒烟通常 inconclusive（样本太少），属正常，不代表 skill 不好 |");
+  lines.push("");
+  lines.push("> 一句话：**激活率高 ≠ 有用**。要看「规则纠偏胜率」和「增益区间」——区间不跨 0、增益达标，才算真正有效。样本不够时结论就是「证据不足」，这是诚实，不是失败。");
+  lines.push("");
+
   for (const [label, state] of [["原始证据完整性", summary.integrity], ["文件访问隔离", summary.isolation]] as const) {
     if (state?.verified !== true || state.issues.length > 0) {
       lines.push(`> ${label}：未验证。${state?.issues.join("；") || "缺少验证记录"}`);
