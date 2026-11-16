@@ -1,6 +1,6 @@
 ---
 name: capability-eval-flow
-description: 在 OptraCall 产品环境里用「装/不装」对照测评知识/记忆类能力（memory 跨事项经验 / SAP 分析方法 / Case 判断）。唯一变量是能力开关（Host flag），处理侧注入合成 Fixture，冻结后执行、行为取证、按门禁下结论。
+description: 在 OptraCall 产品环境里用「装/不装」对照测评知识/记忆类能力（memory 跨事项经验 / SAP 分析方法）。唯一变量是能力开关（Host flag），处理侧注入合成 Fixture，冻结后执行、行为取证、按门禁下结论。
 agent_created: true
 ---
 
@@ -17,7 +17,6 @@ agent_created: true
 | --- | --- | --- | --- | --- |
 | `memory` | `--disable-experience-learning` | `read_case_sources` | find/read 成功 | Case 判断卡片 |
 | `sap-method` | `--disable-sap-methods` | `read_semantic_context` | 读到 sap-method 目标 | 已发布分析方法 |
-| `case-decision` | `--disable-case-decisions` | `read_case_decisions` | 读到绑定 Case 判断 | Case 判断卡片 + 任务绑定 |
 
 > SAP 是共享工具仅禁 sap-method 内容，故须真正读到方法才算使用（find 空结果不算）；memory 工具整体禁用，find 成功即算。
 
@@ -27,7 +26,7 @@ agent_created: true
 
 ## 用户怎么用
 
-1. 指明 OptraCall checkout 路径、要测的能力（memory/sap-method/case-decision）与套件。
+1. 指明 OptraCall checkout 路径、要测的能力（memory/sap-method）与套件。
 2. 调用 `/skill:capability-eval-flow` 或说「测 SAP 方法能力」/「跑 memory 测评」。
 3. 确认题集、重复、评委轮数；真实运行产生费用，开跑前确认规模。
 
@@ -58,7 +57,7 @@ OptraCall 正常任务非 OS 沙箱。隔离靠独立评测根、每次 attempt 
 
 ## S0 收集输入
 
-- 确认 checkout 路径与 capability（memory/sap-method/case-decision）。
+- 确认 checkout 路径与 capability（memory/sap-method）。
 - 套件须声明 `optracall.capability` + `capabilityFixtures`。现成：`optracall-memory-smoke.json`、`optracall-sap-smoke.json`。
 - 确认规模：矩阵 = `任务数 × repeat × 2` 被评 + `任务数 × repeat × judgeRepeat` 评委。真实运行获授权后进 S1。
 
@@ -74,7 +73,7 @@ node --experimental-strip-types src/cli/main.ts preflight \
 ## S2 套件就绪
 
 - 任务创造「需要该能力」的情境，冻结交付文件名（`deliverablePath`）。
-- Fixture：memory/case-decision 用 `{caseTitle, judgment:{kind,title,statement}}`；sap-method 用 `{title, content:{conditions,logic,judgment,limits}}`。设计正例与干扰项。
+- Fixture：memory 用 `{caseTitle, judgment:{kind,title,statement}}`；sap-method 用 `{title, content:{conditions,logic,judgment,limits}}`。设计正例与干扰项。
 - 断言检验能力使用行为约束，非措辞。私有真值存 `.local/`。
 - 断言先冻结；G1 冻结 Fixture 哈希、题集、模型、轮数、阈值入 `run-manifest.json`。
 

@@ -649,7 +649,7 @@ async function commandCapabilityEval(args: CliArgs): Promise<number> {
   const suiteCheck = checkSuite(suite);
   if (!suiteCheck.valid) { process.stderr.write(`套件存在阻断性错误：\n  ${suiteCheck.errors.join("\n  ")}\n`); return 1; }
   const capability = suite.optracall?.capability;
-  if (!capability || !CAPABILITIES[capability]) { process.stderr.write("capability-eval 需要套件声明 optracall.capability=memory/sap-method/case-decision 与 capabilityFixtures\n"); return 1; }
+  if (!capability || !CAPABILITIES[capability]) { process.stderr.write("capability-eval 需要套件声明 optracall.capability=memory/sap-method 与 capabilityFixtures\n"); return 1; }
   const fixtures = (suite.optracall!.capabilityFixtures ?? suite.optracall!.memoryFixtures)!;
   const optracallRoot = flagString(args.flags, "optracall");
   if (!optracallRoot) { process.stderr.write("能力测评需要 --optracall <OptraCall checkout 路径>\n"); return 1; }

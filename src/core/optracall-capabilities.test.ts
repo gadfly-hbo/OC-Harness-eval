@@ -4,15 +4,14 @@ import { test } from "node:test";
 import { CAPABILITIES, detectCapabilityUsage } from "./optracall-capabilities.ts";
 import type { PiEvent } from "./pi.ts";
 
-test("注册表含三个 A 族能力，flag/工具/语义正确", () => {
-  assert.deepEqual(Object.keys(CAPABILITIES).sort(), ["case-decision", "memory", "sap-method"]);
+test("注册表含两个 A 族能力，flag/工具/语义正确", () => {
+  assert.deepEqual(Object.keys(CAPABILITIES).sort(), ["memory", "sap-method"]);
   assert.equal(CAPABILITIES.memory.disableFlag, "--disable-experience-learning");
   assert.equal(CAPABILITIES.memory.forensicTool, "read_case_sources");
   assert.equal(CAPABILITIES.memory.consultOn, "find-or-read");
   assert.equal(CAPABILITIES["sap-method"].disableFlag, "--disable-sap-methods");
   assert.equal(CAPABILITIES["sap-method"].consultOn, "read");
   assert.equal(CAPABILITIES["sap-method"].readTargetKind, "sap-method");
-  assert.equal(CAPABILITIES["case-decision"].disableFlag, "--disable-case-decisions");
 });
 
 test("memory：find 成功即算使用（工具整体禁用）", () => {
@@ -57,22 +56,4 @@ test("基线工具失败尝试不算成功使用", () => {
     { type: "tool_execution_end", toolCallId: "f1", isError: true },
   ];
   assert.equal(detectCapabilityUsage(events, CAPABILITIES.memory).consulted, false);
-});
-
-test("case-decision：actionless 工具每次成功调用即 read", () => {
-  assert.equal(CAPABILITIES["case-decision"].actionless, true);
-  assert.equal(CAPABILITIES["case-decision"].bindCase, true);
-  const events: PiEvent[] = [
-    { type: "tool_execution_start", toolName: "read_case_decisions", toolCallId: "r1", args: {} },
-    { type: "tool_execution_end", toolCallId: "r1", isError: false },
-  ];
-  const usage = detectCapabilityUsage(events, CAPABILITIES["case-decision"]);
-  assert.equal(usage.consulted, true);
-  assert.equal(usage.readCalls, 1);
-  assert.equal(usage.successfulReads, 1);
-  const failed: PiEvent[] = [
-    { type: "tool_execution_start", toolName: "read_case_decisions", toolCallId: "r1", args: {} },
-    { type: "tool_execution_end", toolCallId: "r1", isError: true },
-  ];
-  assert.equal(detectCapabilityUsage(failed, CAPABILITIES["case-decision"]).consulted, false);
 });

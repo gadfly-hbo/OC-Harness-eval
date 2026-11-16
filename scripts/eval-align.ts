@@ -25,7 +25,6 @@ const probes: Array<{ name: string; script: string; args: string[] }> = [
   { name: "模型调用链路", script: "optracall-model-integration.ts", args: [] },
   { name: "memory 能力", script: "optracall-capability-integration.ts", args: ["--capability", "memory"] },
   { name: "sap-method 能力", script: "optracall-capability-integration.ts", args: ["--capability", "sap-method"] },
-  { name: "case-decision 能力", script: "optracall-capability-integration.ts", args: ["--capability", "case-decision"] },
 ];
 
 const results: Array<{ name: string; pass: boolean; detail: string }> = [];

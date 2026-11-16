@@ -38,7 +38,7 @@ node --experimental-strip-types scripts/eval-align.ts \
   --checkout <checkout> --node <node25+>
 ```
 
-`eval-align.ts` 依次检查五个接缝：Host API 链路、模型调用链路、memory / sap-method / case-decision 能力。输出每项 ✅/❌ 与汇总。
+`eval-align.ts` 依次检查四个接缝：Host API 链路、模型调用链路、memory / sap-method 能力。输出每项 ✅/❌ 与汇总。
 
 ## S2 判定与修复
 
@@ -56,7 +56,6 @@ node --experimental-strip-types scripts/eval-align.ts \
 | SAP save/publish 响应形状 | `optracall-capabilities.ts` `seedSapMethods` | 对照 `extensions/business-plugins/metric-factory/methods/store.ts` |
 | Case 存储 schema/迁移/origin 校验 | `src/core/optracall-memory.ts` | 对照 `src/host/case-store.ts`（最脆弱，仔细核对表结构与字段校验） |
 | native 会话 JSONL 格式 | `src/core/optracall-evidence.ts` `parseNativeSession` | 对照 Pi SDK 会话格式（SDK 升级时） |
-| 任务-Case 绑定修订 | `optracall-execution.ts` bindCase 段 | 对照 `prepareTaskContext` |
 
 修复纪律：
 - 每次只改评测工具，改完重跑 `eval-align.ts` 验证。

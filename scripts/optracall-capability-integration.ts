@@ -34,9 +34,7 @@ const fixtures: Record<string, unknown>[] = capability === "sap-method"
 
 const findArgs = capability === "sap-method"
   ? { action: "find", query: "转化率", kinds: ["sap-method"] }
-  : capability === "case-decision"
-    ? {}
-    : { action: "find", query: "缺货" };
+  : { action: "find", query: "缺货" };
 
 function startFakeProvider(): Promise<{ port: number; close: () => Promise<void> }> {
   const server = createServer((request, response) => {

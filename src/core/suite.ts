@@ -28,9 +28,9 @@ export interface SuiteFile {
   optracall?: {
     skillName?: string;
     templateDir?: string;
-    /** 能力开关模式：memory（M6）/ sap-method（SAP 方法）/ case-decision（M5）。 */
-    capability?: "memory" | "sap-method" | "case-decision";
-    /** 能力 Fixture（按 capability 解释）：memory/case-decision 用判断卡片，sap-method 用方法正文。 */
+    /** 能力开关模式：memory（M6 跨事项经验）/ sap-method（SAP 分析方法）。 */
+    capability?: "memory" | "sap-method";
+    /** 能力 Fixture（按 capability 解释）：memory 用判断卡片，sap-method 用方法正文。 */
     capabilityFixtures?: Array<Record<string, unknown>>;
     /** memory 专用 Fixture（兼容旧套件）。 */
     memoryFixtures?: Array<{ caseTitle: string; caseStatus?: "pending" | "analyzing" | "awaiting_confirmation" | "observing"; judgment: { kind: "hypothesis" | "strategy"; title: string; statement: string } }>;
@@ -131,8 +131,8 @@ export function loadSuite(suitePath: string): SuiteFile {
   }
   if (parsed.optracall !== undefined) {
     if (parsed.optracall.capability) {
-      if (!["memory", "sap-method", "case-decision"].includes(parsed.optracall.capability)) {
-        throw new Error("optracall.capability 须为 memory/sap-method/case-decision");
+      if (!["memory", "sap-method"].includes(parsed.optracall.capability)) {
+        throw new Error("optracall.capability 须为 memory/sap-method");
       }
       const fixtures = parsed.optracall.capabilityFixtures ?? parsed.optracall.memoryFixtures;
       if (!Array.isArray(fixtures) || fixtures.length === 0) {

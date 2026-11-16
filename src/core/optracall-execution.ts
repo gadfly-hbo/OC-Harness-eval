@@ -43,7 +43,7 @@ export interface OptraCallExecutionOptions {
   fetchImpl?: FetchLike;
   /** 能力开关模式：两侧 codeRoot 全等，唯一变量是 Host 启动 flag（按 variantId 分侧）。 */
   capabilityToggle?: { baselineArgs: string[]; treatmentArgs: string[] };
-  /** 能力 id（memory/sap-method/case-decision）；缺省 memory。决定取证工具与 Fixture 注入方式。 */
+  /** 能力 id（memory/sap-method）；缺省 memory。决定取证工具与 Fixture 注入方式。 */
   capabilityId?: CapabilityId;
   /** 通用能力 Fixture（按 capabilityId 解释）；处理侧注入，baseline 不注入。 */
   capabilityFixtures?: Array<Record<string, unknown>>;
@@ -72,7 +72,6 @@ export function createOptraCallExecution(options: OptraCallExecutionOptions): Ev
   };
   const usedSessions = new Set<string>();
   const seededSides = new Set<OptraCallSide>();
-  const seededCaseBySide = new Map<OptraCallSide, { caseId: string; caseRevision: number }>();
   const ledgerPath = join(runRoot, "optracall-ledger.jsonl");
   let subjectStopped: string | null = null;
   let finalized = false;
@@ -126,17 +125,13 @@ export function createOptraCallExecution(options: OptraCallExecutionOptions): Ev
     const caseDir = dirname(request.workspaceRoot);
     const state = await ensureHost(side);
     const capId: CapabilityId = options.capabilityId ?? "memory";
-    const capDef = CAPABILITIES[capId];
     const fixtures = options.capabilityFixtures ?? options.memoryFixtures ?? [];
     if (capability && side === "skill" && fixtures.length && !seededSides.has(side)) {
       if (capId === "sap-method") {
         await seedSapMethods(state.client!, fixtures as unknown as SapMethodFixture[]);
       } else {
-        // memory 与 case-decision 都注入 Case 判断卡片（case-decision 另需任务绑定）。
         await state.client!.initializeCaseStore();
-        const seeded = seedMemoryFixtures(env.dataRoot, fixtures as unknown as MemoryFixture[]);
-        const first = seeded[0];
-        if (first) seededCaseBySide.set(side, { caseId: first.caseId, caseRevision: first.revision });
+        seedMemoryFixtures(env.dataRoot, fixtures as unknown as MemoryFixture[]);
       }
       seededSides.add(side);
     }
@@ -146,22 +141,9 @@ export function createOptraCallExecution(options: OptraCallExecutionOptions): Ev
     for (const file of options.templateFor(request.taskId ?? "")) {
       await client.uploadFile(projectId, file.name, file.bytes, file.directory);
     }
-    let caseContext: { caseId: string; caseRevision: number; projectWorkRevision: number; selectedReferenceIds: string[] } | undefined;
-    const seededCase = seededCaseBySide.get(side);
-    if (capability && capDef.bindCase && seededCase) {
-      await client.request("POST", `/api/cases/${seededCase.caseId}/projects`, { operationId: newRequestId(), expectedRevision: seededCase.caseRevision, projectId });
-      const caseResp = await client.request("GET", `/api/cases/${seededCase.caseId}`);
-      const workResp = await client.request("GET", `/api/projects/${projectId}/work`);
-      caseContext = {
-        caseId: seededCase.caseId,
-        caseRevision: caseResp?.case?.revision ?? seededCase.caseRevision,
-        projectWorkRevision: workResp?.work?.revision ?? 0,
-        selectedReferenceIds: [],
-      };
-    }
     const requestId = newRequestId();
     const startedAt = Date.now();
-    await client.sendMessage(projectId, task.id, request.prompt, requestId, caseContext);
+    await client.sendMessage(projectId, task.id, request.prompt, requestId);
     const { lastRun, timedOut } = await client.waitTerminal(projectId, task.id, requestId, {
       timeoutMs: options.timeoutMs, signal: options.signal, hostExited: state.host!.exited,
     });
