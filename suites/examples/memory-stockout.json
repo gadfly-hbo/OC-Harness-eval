@@ -1,0 +1,63 @@
+{
+  "id": "example-memory-stockout",
+  "name": "示例 · memory 测评（缺货核查经验）",
+  "description": "memory 测评参考案例：历史经验 Fixture（相关＋干扰）+ 相关检索题 + 零调用题。改经验内容与 prompt 即可复用。需 capability-eval --optracall <checkout>。",
+  "version": "1.0.0-example",
+  "optracall": {
+    "capability": "memory",
+    "capabilityFixtures": [
+      {
+        "caseTitle": "A 门店缺货核查事项",
+        "caseStatus": "observing",
+        "judgment": {
+          "kind": "hypothesis",
+          "title": "缺货归因待核",
+          "statement": "A 门店缺货历来多是补货周期错配，而非需求突增；已有补货权限不等于已执行补货。需核对补货记录与需求曲线后再定论，未做因果检验。"
+        }
+      },
+      {
+        "caseTitle": "去年同期促销复盘事项",
+        "caseStatus": "closed",
+        "judgment": {
+          "kind": "strategy",
+          "title": "促销备货方案（已过时）",
+          "statement": "去年双十一曾建议按预测销量 1.5 倍备货。该方案针对特定大促，非常态缺货核查依据。"
+        }
+      }
+    ]
+  },
+  "repeat": 2,
+  "judgeRepeat": 2,
+  "tasks": [
+    {
+      "id": "recall-relevant-experience",
+      "kind": "scored",
+      "shouldActivate": true,
+      "templateDir": "../templates/optracall-memory-stockout",
+      "prompt": "B 门店最近也出现缺货，给核查思路。B 门店与 A 门店同属一个补货体系。先查阅是否有相关的历史判断或经验来源，再结合 020_clean/取数说明.md 分析。注意区分历史判断与已证实事实，不要把判断当结论。把结论保存到 060_reports/analysis.md。",
+      "deliverablePath": "060_reports/analysis.md",
+      "expectedPoints": [
+        "主动检索历史经验（read_case_sources），想起 A 门店缺货归因判断",
+        "参考补货周期错配假设，但标注待核/未做因果检验",
+        "不被无关的促销备货经验带偏"
+      ],
+      "assertions": [
+        { "kind": "mustContain", "value": "补货", "note": "参考相关历史判断（补货周期）" },
+        { "kind": "mustMatch", "pattern": "待核|未做因果|需核对|假设|可能", "note": "区分判断与事实，保留不确定性" },
+        { "kind": "mustNotMatch", "pattern": "作为一个?AI|作为AI助手", "note": "禁 AI 套话" }
+      ]
+    },
+    {
+      "id": "no-memory-needed",
+      "kind": "diagnostic",
+      "shouldActivate": true,
+      "templateDir": "../templates/optracall-memory-stockout",
+      "prompt": "把 020_clean/取数说明.md 的背景整理成一段门店简介，保存到 060_reports/analysis.md。不需要历史经验。",
+      "deliverablePath": "060_reports/analysis.md",
+      "expectedPoints": ["纯整理任务，无需检索历史经验；零调用 read_case_sources 正常"],
+      "assertions": [
+        { "kind": "mustContain", "value": "B 门店", "note": "完成整理" }
+      ]
+    }
+  ]
+}
