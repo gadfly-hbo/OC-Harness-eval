@@ -23,12 +23,16 @@ export interface CapabilityDef {
   consultOn: "find-or-read" | "read";
   /** read 目标须匹配的 kind（如 sap-method）；缺省不限。 */
   readTargetKind?: string;
+  /** 工具无 action 字段（如 read_case_decisions），每次成功调用即视为 read。 */
+  actionless?: boolean;
+  /** 需每 attempt 把 Fixture Case 绑定到项目并发 caseContext（case-decision）。 */
+  bindCase?: boolean;
 }
 
 export const CAPABILITIES: Record<CapabilityId, CapabilityDef> = {
   memory: { id: "memory", label: "跨事项经验（M6）", disableFlag: "--disable-experience-learning", forensicTool: "read_case_sources", consultOn: "find-or-read" },
   "sap-method": { id: "sap-method", label: "SAP 分析方法", disableFlag: "--disable-sap-methods", forensicTool: "read_semantic_context", consultOn: "read", readTargetKind: "sap-method" },
-  "case-decision": { id: "case-decision", label: "当前 Case 判断（M5）", disableFlag: "--disable-case-decisions", forensicTool: "read_case_decisions", consultOn: "read" },
+  "case-decision": { id: "case-decision", label: "当前 Case 判断（M5）", disableFlag: "--disable-case-decisions", forensicTool: "read_case_decisions", consultOn: "read", actionless: true, bindCase: true },
 };
 
 export interface CapabilityUsage {
@@ -48,15 +52,21 @@ export function detectCapabilityUsage(events: PiEvent[], def: CapabilityDef): Ca
   const pending = new Map<string, { action: string; target?: any }>();
   for (const event of events) {
     if (event.type === "tool_execution_start" && event.toolName === def.forensicTool) {
-      const args = (event.args ?? {}) as { action?: string; query?: string; target?: any };
+      const args = (event.args ?? {}) as { action?: string; query?: string; target?: any; recordId?: string; revision?: number };
       const id = typeof event.toolCallId === "string" ? event.toolCallId : "";
-      if (args.action === "find") {
+      if (def.actionless) {
+        usage.readCalls += 1;
+        pending.set(id, { action: "read", target: args.recordId ? { recordId: args.recordId, revision: args.revision } : undefined });
+      } else if (args.action === "find") {
         usage.findCalls += 1;
         if (typeof args.query === "string" && args.query.trim()) usage.queries.push(args.query);
+        pending.set(id, { action: "find", target: args.target });
       } else if (args.action === "read") {
         usage.readCalls += 1;
+        pending.set(id, { action: "read", target: args.target });
+      } else {
+        pending.set(id, { action: String(args.action ?? ""), target: args.target });
       }
-      pending.set(id, { action: String(args.action ?? ""), target: args.target });
     } else if (event.type === "tool_execution_end") {
       const id = typeof event.toolCallId === "string" ? event.toolCallId : "";
       const call = pending.get(id);

@@ -34,7 +34,9 @@ const fixtures: Record<string, unknown>[] = capability === "sap-method"
 
 const findArgs = capability === "sap-method"
   ? { action: "find", query: "转化率", kinds: ["sap-method"] }
-  : { action: "find", query: "缺货" };
+  : capability === "case-decision"
+    ? {}
+    : { action: "find", query: "缺货" };
 
 function startFakeProvider(): Promise<{ port: number; close: () => Promise<void> }> {
   const server = createServer((request, response) => {
@@ -106,6 +108,17 @@ try {
   };
   const treatment = await execution.run("subject", req("treatment"));
   const baseline = await execution.run("subject", req("baseline"));
+  if (process.argv.includes("--debug")) {
+    const { readFileSync } = await import("node:fs");
+    const nat = readFileSync(join(work, "cases", "treatment", "t", "1", "optracall", "native-session.jsonl"), "utf8");
+    for (const line of nat.split("\n")) {
+      if (!line.trim()) continue;
+      const e = JSON.parse(line); const m = e.message;
+      if (m?.role === "assistant" && Array.isArray(m.content)) for (const b of m.content) if (b.type === "toolCall") console.error("CALL", b.name, JSON.stringify(b.arguments).slice(0, 120));
+      if (m?.role === "toolResult") console.error("RESULT", m.toolName, "isError=", m.isError, JSON.stringify(m.content).slice(0, 150));
+    }
+    console.error("USAGE", JSON.stringify(treatment.memoryUsage));
+  }
   process.stdout.write(`[${capability}] 处理侧 exit=${treatment.exitCode} consulted=${treatment.memoryUsage?.consulted} findCalls=${treatment.memoryUsage?.findCalls}\n`);
   process.stdout.write(`[${capability}] 基线侧 exit=${baseline.exitCode} consulted=${baseline.memoryUsage?.consulted}\n`);
   if (treatment.exitCode !== 0) throw new Error(`处理侧未成功：${treatment.stderr}`);

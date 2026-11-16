@@ -58,3 +58,21 @@ test("基线工具失败尝试不算成功使用", () => {
   ];
   assert.equal(detectCapabilityUsage(events, CAPABILITIES.memory).consulted, false);
 });
+
+test("case-decision：actionless 工具每次成功调用即 read", () => {
+  assert.equal(CAPABILITIES["case-decision"].actionless, true);
+  assert.equal(CAPABILITIES["case-decision"].bindCase, true);
+  const events: PiEvent[] = [
+    { type: "tool_execution_start", toolName: "read_case_decisions", toolCallId: "r1", args: {} },
+    { type: "tool_execution_end", toolCallId: "r1", isError: false },
+  ];
+  const usage = detectCapabilityUsage(events, CAPABILITIES["case-decision"]);
+  assert.equal(usage.consulted, true);
+  assert.equal(usage.readCalls, 1);
+  assert.equal(usage.successfulReads, 1);
+  const failed: PiEvent[] = [
+    { type: "tool_execution_start", toolName: "read_case_decisions", toolCallId: "r1", args: {} },
+    { type: "tool_execution_end", toolCallId: "r1", isError: true },
+  ];
+  assert.equal(detectCapabilityUsage(failed, CAPABILITIES["case-decision"]).consulted, false);
+});

@@ -1,0 +1,40 @@
+{
+  "id": "optracall-case-decision-smoke",
+  "name": "OptraCall 产品环境 · Case 判断（M5）最小冒烟（单题）",
+  "description": "真实最小冒烟：1 题 × 2 侧 × 1 次 + 1 轮盲评。唯一变量是当前 Case 判断读取能力有无（--disable-case-decisions）。处理侧注入 Case 判断卡片并绑定到任务。单题仅作链路诊断。需 capability-eval --optracall <checkout>。",
+  "version": "0.1.0",
+  "optracall": {
+    "capability": "case-decision",
+    "capabilityFixtures": [
+      {
+        "caseTitle": "门店缺货核查事项",
+        "caseStatus": "observing",
+        "judgment": {
+          "kind": "hypothesis",
+          "title": "缺货归因待核",
+          "statement": "历史判断：A 门店缺货更可能源于补货周期错配，而非需求突增；已有权限不等于已执行补货。需核对补货记录后再定论，未做因果检验。"
+        }
+      }
+    ]
+  },
+  "repeat": 1,
+  "judgeRepeat": 1,
+  "tasks": [
+    {
+      "id": "case-stockout",
+      "kind": "scored",
+      "shouldActivate": true,
+      "prompt": "本轮已绑定一个缺货核查 Case。请先读取该 Case 的判断与方案，再结合 020_clean/取数说明.md 给出核查思路。把结论保存到 060_reports/analysis.md。",
+      "deliverablePath": "060_reports/analysis.md",
+      "expectedPoints": [
+        "应读取本轮绑定 Case 的判断（read_case_decisions）",
+        "引用 Case 判断时区分判断/执行/效果，注明未做因果检验",
+        "不把 Case 判断当作已证实结论"
+      ],
+      "assertions": [
+        { "kind": "mustContain", "value": "缺货", "note": "结论围绕缺货问题" },
+        { "kind": "mustNotMatch", "pattern": "作为一个?AI|作为AI助手", "note": "禁止 AI 套话" }
+      ]
+    }
+  ]
+}

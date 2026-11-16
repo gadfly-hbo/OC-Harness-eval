@@ -206,8 +206,8 @@ export class OptraCallClient {
     return project;
   }
 
-  async sendMessage(projectId: string, taskId: string, text: string, requestId: string): Promise<void> {
-    await this.request("POST", `/api/projects/${projectId}/tasks/${taskId}/messages`, { requestId, text });
+  async sendMessage(projectId: string, taskId: string, text: string, requestId: string, caseContext?: { caseId: string; caseRevision: number; projectWorkRevision: number; selectedReferenceIds: string[] }): Promise<void> {
+    await this.request("POST", `/api/projects/${projectId}/tasks/${taskId}/messages`, { requestId, text, ...(caseContext ? { caseContext } : {}) });
   }
 
   async stopTask(projectId: string, taskId: string): Promise<void> {

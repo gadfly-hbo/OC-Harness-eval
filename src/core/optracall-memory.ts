@@ -101,7 +101,7 @@ export function seedMemoryFixtures(dataRoot: string, fixtures: MemoryFixture[]):
         const resultJson = JSON.stringify({ recordId, revision: 1, caseId, kind: fixture.judgment.kind, ...payload, lifecycle: "active" });
         const requestSha = createHash("sha256").update(resultJson).digest("hex");
         insertReceipt.run(operationId, "case_decision_save", requestSha, caseId, null, "completed", resultJson, now, now);
-        const origin = { actorKind: "user", operationId, caseId, recordId };
+        const origin = { actorKind: "user", projectId: null, taskId: null, requestId: null, sessionId: null, toolCallId: null };
         insertRevision.run(recordId, 1, caseId, fixture.judgment.kind, JSON.stringify(payload), "[]", JSON.stringify(origin), "active", now, operationId);
         seeded.push({ caseStoreId, caseId, recordId, revision: 1, title: fixture.judgment.title });
       }
