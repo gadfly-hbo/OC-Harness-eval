@@ -20,10 +20,11 @@ agent_created: true
 
 ## S0 收集输入
 
-- OptraCall checkout 路径（默认 `/Users/huangbo/Dev/OptraCall`）。
+- **产品来源以远端 main 为准**：对焦最新产品时直接从 `https://github.com/gadfly-hbo/OptraCall` 读取（fetch/clone 到评测工作区），不假设本地 checkout 最新。本地 checkout（默认 `/Users/huangbo/Dev/OptraCall`）仅作便利副本；用本地副本时先确认其 HEAD 与远端 main 一致，否则 fetch 更新或 clone 远端 main 到评测工作区。
 - Node 25+ 解释器路径（Host/worker 用；不足时向用户取得）。
 - OC-Harness-eval 评测仓库路径（本 skill 所在仓库）。
-- 确认 checkout 已安装依赖（`node_modules` 存在）。
+- 确认所用 checkout 已安装依赖（`node_modules` 存在）；clone 的新副本需先 `npm ci`。
+- 记录对焦的产品 commit（远端 main HEAD），供冻结与报告引用。
 
 ## S1 检查适配
 

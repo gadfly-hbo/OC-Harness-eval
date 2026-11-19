@@ -13,6 +13,14 @@
 
 任何产品本体改动（如为测评给产品加插桩）一律不做；那属于独立的产品工程任务，须用户明确授权并走 OptraCall 工程流程，不在测评授权范围内。
 
+## 产品来源与对焦
+
+- 测评对焦的产品来源是 OptraCall 远端仓库 **https://github.com/gadfly-hbo/OptraCall** 的 `main`。
+- 需要对焦最新产品 main 时，**直接从远端读取**（fetch/clone 到评测工作区），不假设本地 checkout 是最新。
+- 本地 checkout（如 `~/Dev/OptraCall`）仅作便利副本，其 HEAD 可能落后于远端 main；对焦/对齐以远端 main 为准。
+- 读取远端是只读使用产品（clone 到评测工作区）：不改远端、不改用户本地 checkout、不碰运行中服务。
+- 每次运行冻结所用产品 commit；报告结论只对该 commit 负责。
+
 ## 开始工作
 
 开发或变更测评器、题集及判据前，先阅读并遵循[《测评器开发规范》](docs/测评器开发规范.md)。
